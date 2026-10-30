@@ -174,6 +174,23 @@ function initSchema(d) {
   `);
 }
 
+// The standard 10 lead statuses every workspace starts with.
+const STATUS_DEFS = [
+  ['New', '#64748b', 0], ['Interested', '#16a34a', 1], ['Not Interested', '#dc2626', 1],
+  ['Follow-up', '#f59e0b', 1], ['Busy', '#f97316', 0], ['Not Picked', '#78716c', 0],
+  ['Switched Off', '#78716c', 0], ['Wrong Number', '#a8a29e', 0], ['Converted', '#059669', 1],
+  ['Lost', '#991b1b', 0],
+];
+
+function seedStatuses(d, wsId) {
+  const st = {};
+  STATUS_DEFS.forEach(([name, color, conn], i) => {
+    st[name] = d.prepare('INSERT INTO statuses (workspace_id, name, color, counts_connected, sort) VALUES (?,?,?,?,?)')
+      .run(wsId, name, color, conn, i).lastInsertRowid;
+  });
+  return st;
+}
+
 function seed(d) {
   const wsCount = d.prepare('SELECT COUNT(*) c FROM workspaces').get().c;
   if (wsCount > 0) return;
@@ -193,17 +210,7 @@ function seed(d) {
   const emp1 = mkUser('Rahul Verma', 'emp1@allcrm.local', 'Emp@123', 'employee');
   const emp2 = mkUser('Sneha Kulkarni', 'emp2@allcrm.local', 'Emp@123', 'employee');
 
-  const statusDefs = [
-    ['New', '#64748b', 0], ['Interested', '#16a34a', 1], ['Not Interested', '#dc2626', 1],
-    ['Follow-up', '#f59e0b', 1], ['Busy', '#f97316', 0], ['Not Picked', '#78716c', 0],
-    ['Switched Off', '#78716c', 0], ['Wrong Number', '#a8a29e', 0], ['Converted', '#059669', 1],
-    ['Lost', '#991b1b', 0],
-  ];
-  const st = {};
-  statusDefs.forEach(([name, color, conn], i) => {
-    st[name] = d.prepare('INSERT INTO statuses (workspace_id, name, color, counts_connected, sort) VALUES (?,?,?,?,?)')
-      .run(wsId, name, color, conn, i).lastInsertRowid;
-  });
+  const st = seedStatuses(d, wsId);
 
   d.prepare('INSERT INTO custom_fields (workspace_id, name, type, options, sort) VALUES (?,?,?,?,?)')
     .run(wsId, 'Budget (₹)', 'number', null, 1);
@@ -320,4 +327,4 @@ function audit(d, wsId, userId, action, detail) {
     .run(wsId || null, userId || null, action, detail || null, new Date().toISOString());
 }
 
-module.exports = { getDb, openDb, closeDb, DB_PATH, DATA_DIR, touchLead, logEvent, audit };
+module.exports = { getDb, openDb, closeDb, DB_PATH, DATA_DIR, touchLead, logEvent, audit, seedStatuses, STATUS_DEFS };

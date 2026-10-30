@@ -91,3 +91,60 @@ RESULT: 28 passed, 0 failed
    "export" as a lead id and export never ran → route moved above `/:id`.
 2. (Test-script bugs, app was correct: lead-create posts to `POST /leads`,
    dashboard JSON key is `feedHtml`.)
+
+---
+
+## 7. Multi-company self-signup (`/register`) — 2026-10-30
+
+Feature: public "Nayi Company" registration. `GET /register` renders a form in the
+login page's style (Company Name, Your Name, Email, Password, Confirm Password);
+the login page links to it and it links back. `POST /register` validates
+(required fields, email format, password ≥ 6 chars + match, email globally
+unique across all users), then in ONE transaction creates the workspace,
+seeds the standard 10 statuses, and creates the owner as `admin` — clean
+slate, no demo data. The new admin is logged in immediately. In-memory rate
+limit: max 10 POST /register attempts per IP per 15 minutes → HTTP 429 with a
+plain Hindi message.
+
+Changed code: `routes/auth.js` (routes + rate limit + login-page link),
+`db.js` (status list extracted to exported `STATUS_DEFS`/`seedStatuses()`,
+reused by both the demo seed and registration — no behaviour change).
+
+Method: fresh DB (`rm -rf data`, server on PORT=3100), curl + cookie jars.
+
+```
+== R1. Login page links to register; register page renders ==
+PASS: login page has Register link
+PASS: register form has company field
+PASS: register page links back to login
+== R2. Register new company 'Test Traders' ==
+PASS: register -> 302 (auto-login)
+PASS: new admin dashboard: 0 leads
+PASS: dashboard greets new owner
+PASS: settings shows own company name 'Test Traders'
+PASS: new admin sees ZERO demo leads
+PASS: new admin's user list has no demo users
+== R3. Duplicate email + validation errors ==
+PASS: duplicate email -> friendly error
+PASS: demo admin email also blocked (global uniqueness)
+PASS: short password rejected
+PASS: password mismatch rejected
+PASS: bad email format rejected
+PASS: DB: exactly 2 workspaces, 1 test user (no duplicates)
+PASS: DB: new workspace seeded with 10 statuses
+== R4. Demo admin unaffected; isolation both ways ==
+PASS: demo admin still sees 30 demo leads
+PASS: demo admin's user list does NOT show test company
+PASS: new admin CANNOT see demo lead data by URL
+PASS: cross-ws access gives 'Lead nahi mili' (no leak)
+== R5. Rate limit ==
+PASS: attempts 1-10 register fine, 11th attempt -> HTTP 429 + plain message
+```
+
+Registration-specific result: **21 passed, 0 failed**.
+
+Regression: after these tests, on a brand-new fresh DB, the existing suite was
+re-run exactly once — **RESULT: 28 passed, 0 failed** (unchanged).
+(Note: running `tools/e2e-test.sh` twice against the same DB makes its import
+check fail because the first run's imported mobiles already exist — that is
+pre-existing test behaviour on a dirty DB, not an app regression.)
