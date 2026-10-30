@@ -1,4 +1,5 @@
 'use strict';
+require('./lib/replication').bootstrap(); // restore DB from replica (if configured) before anything opens it
 const path = require('path');
 const express = require('express');
 const session = require('express-session');

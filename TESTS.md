@@ -148,3 +148,87 @@ re-run exactly once — **RESULT: 28 passed, 0 failed** (unchanged).
 (Note: running `tools/e2e-test.sh` twice against the same DB makes its import
 check fail because the first run's imported mobiles already exist — that is
 pre-existing test behaviour on a dirty DB, not an app regression.)
+
+## 8. Litestream replication — backup/restore on ephemeral disks — 2026-10-30
+
+`lib/replication.js` + one line at the top of `server.js`
+(`require('./lib/replication').bootstrap()` before `openDb()`). Completely
+off unless `REPLICA_S3_BUCKET` (S3 mode) or `REPLICA_FILE_PATH` (file mode)
+is set. On boot it downloads the pinned Litestream v0.3.13 binary into
+`DATA_DIR/bin/` if missing, generates `DATA_DIR/litestream.yml`, restores
+the DB from the replica if the local file is gone, then runs
+`litestream replicate` detached (output → `DATA_DIR/litestream.log`).
+Any failure logs `[replication] …` and the app boots without replication.
+
+### 8a. File-replica round trip (the money test) — PASSED
+
+```bash
+rm -rf /tmp/repl-test && mkdir -p /tmp/repl-test/data /tmp/repl-test/replica
+cd ~/workspace/all-crm/app
+DATA_DIR=/tmp/repl-test/data REPLICA_FILE_PATH=/tmp/repl-test/replica \
+  PORT=3100 node server.js
+```
+
+Boot 1 log (module downloaded the binary itself via curl through the proxy):
+
+```
+[replication] replica configured (file mode), config: /tmp/repl-test/data/litestream.yml
+[replication] litestream binary not found — downloading https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.tar.gz
+[replication] litestream binary ready: /tmp/repl-test/data/bin/litestream
+[replication] no local DB — checking replica for a restore…
+[replication] no replica data found — fresh start (… msg="no matching backups found")
+[replication] DB not created yet — replication will start when it appears
+All CRM chal raha hai → http://localhost:3100
+[replication] replication running (pid …), log: /tmp/repl-test/data/litestream.log
+```
+
+Register + verify + replica contents:
+
+```bash
+curl -c jar -b jar -X POST \
+  -d "company=Replica Test Co&name=Test Owner&email=owner@repltest.local&password=Test@123&confirm=Test@123" \
+  http://localhost:3100/register        # -> 302 (auto-login)
+curl -b jar http://localhost:3100/settings | grep "Replica Test Co"   # found
+find /tmp/repl-test/replica -type f
+# replica/generations/<id>/snapshots/00000000.snapshot.lz4
+# replica/generations/<id>/wal/00000000_00000000.wal.lz4
+# replica/generations/<id>/wal/00000000_00139d60.wal.lz4
+```
+
+Stop app + litestream, delete the ENTIRE data dir (fresh-instance
+simulation — binary and config must regenerate too), boot again:
+
+```
+[replication] replica configured (file mode), config: /tmp/repl-test/data/litestream.yml
+[replication] litestream binary not found — downloading …
+[replication] litestream binary ready: /tmp/repl-test/data/bin/litestream
+[replication] no local DB — checking replica for a restore…
+[replication] DB restored from replica → /tmp/repl-test/data/allcrm.db
+[replication] replication running (pid …), log: /tmp/repl-test/data/litestream.log
+All CRM chal raha hai → http://localhost:3100
+```
+
+Post-restore verification:
+
+```bash
+curl -c jar2 -b jar2 -X POST -d "email=owner@repltest.local&password=Test@123" \
+  http://localhost:3100/login           # -> 302
+curl -b jar2 http://localhost:3100/settings | grep "Replica Test Co"   # found
+# read-only DB check:
+#   workspaces = [{"id":1,"name":"All CRM Demo"},{"id":2,"name":"Replica Test Co"}]
+#   users      = [{"email":"owner@repltest.local","role":"admin","workspace_id":2}]
+```
+
+**Result: restore works — the registered company and its admin survive a
+complete data-dir wipe.**
+
+### 8b. Regression with replication OFF — PASSED
+
+```bash
+rm -rf data && PORT=3100 node server.js   # no REPLICA_* env
+PORT=3100 bash tools/e2e-test.sh
+# boot log contains NO [replication] lines; suite ends:
+# RESULT: 28 passed, 0 failed
+```
+
+Test artifacts cleaned up afterwards (`/tmp/repl-test`, app `data/`).
