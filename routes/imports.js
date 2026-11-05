@@ -5,6 +5,7 @@ const { getDb, logEvent } = require('../db');
 const { esc, nowISO, cleanMobile, validMobile, fmtDT } = require('../lib/util');
 const { page } = require('../lib/layout');
 const { requireAuth } = require('../lib/auth');
+const { leadRoom } = require('../lib/plans');
 
 const r = express.Router();
 
@@ -80,7 +81,10 @@ r.post('/import', requireAuth, (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const insVal = d.prepare('INSERT INTO lead_custom_values (lead_id, field_id, value) VALUES (?,?,?)');
     const seen = new Set();
-    let added = 0, duplicates = 0, errors = 0;
+    // Plan lead limit: import jitni jagah bachi hai utni hi leads lega,
+    // baaki rows "limit skip" ginegi (poora import block nahi hota).
+    const room = leadRoom(d, u.workspace_id);
+    let added = 0, duplicates = 0, errors = 0, limitSkipped = 0;
     const errSamples = [];
     const tx = d.transaction(() => {
       rows.forEach((row, idx) => {
@@ -91,6 +95,7 @@ r.post('/import', requireAuth, (req, res) => {
         seen.add(mobile);
         const dup = d.prepare('SELECT id FROM leads WHERE workspace_id=? AND mobile=?').get(u.workspace_id, mobile);
         if (dup) { duplicates++; return; }
+        if (room.limited && added >= room.left) { limitSkipped++; return; }
         const id = insLead.run(u.workspace_id, name, mobile, kCity ? String(row[kCity] || '').trim() || null : null,
           kEmail ? String(row[kEmail] || '').trim() || null : null, kSource ? String(row[kSource] || '').trim() || null : 'Import',
           stNew ? stNew.id : null, assignFor(), 'Warm', u.id, nowISO(), nowISO(), nowISO()).lastInsertRowid;
@@ -102,6 +107,7 @@ r.post('/import', requireAuth, (req, res) => {
     d.prepare('INSERT INTO imports (workspace_id, user_id, filename, added, duplicates, errors, created_at) VALUES (?,?,?,?,?,?,?)')
       .run(u.workspace_id, u.id, String(req.body.filename || 'file'), added, duplicates, errors, nowISO());
     res.send(`<div class="flash ok">✅ Import complete — <b>${added}</b> leads jud gayi, <b>${duplicates}</b> duplicate skip, <b>${errors}</b> error rows.</div>
+      ${limitSkipped ? `<div class="flash err">⛔ Plan ki lead limit (${room.max}) poori ho gayi — <b>${limitSkipped}</b> rows limit ki wajah se nahi judi. Limit badhane ke liye plan upgrade karein (support se sampark karein).</div>` : ''}
       ${errSamples.length ? '<p class="small">' + errSamples.map(esc).join('<br>') + '</p>' : ''}
       <p><a class="btn sm" href="/leads">Leads Dekhein →</a></p>`);
   } catch (e) {

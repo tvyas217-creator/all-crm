@@ -232,3 +232,53 @@ PORT=3100 bash tools/e2e-test.sh
 ```
 
 Test artifacts cleaned up afterwards (`/tmp/repl-test`, app `data/`).
+
+---
+
+## 9. Super Admin / plans / subscriptions / approval flow — 2026-11-05
+
+Feature (industry-ready phase): owner-only Super Admin panel (`/super`), plans +
+subscriptions with limits and expiry enforcement, public signup changed to
+**pending → approve → 3-day Trial**, and grandfathering of every pre-billing
+workspace onto a never-expiring **Legacy** plan.
+
+Code: `db.js` (`migrateBilling()` — additive/idempotent: `plans`,
+`subscriptions`, `super_admins` tables, `workspaces.status`, `users.phone`,
+plan + super-admin seeds, Legacy grandfathering), `lib/plans.js` (current
+subscription, access gate, limit rooms, assign/renew), `lib/auth.js` +
+`routes/auth.js` (gate at login and on every request; pending signup),
+`routes/super.js` (panel), limit checks in `routes/settings.js` (users),
+`routes/leads.js`, `routes/imports.js`, `routes/api.js` (webhook), read-only
+"Mera Plan" card in Settings.
+
+Method: `bash tools/super-test.sh` — self-contained (own server on a scratch
+`DATA_DIR`, distinct port, cookie jars per actor, read-only + controlled DB
+assertions, one real server restart for the grandfather check).
+
+```
+RESULT: 49 passed, 0 failed
+```
+
+Covered: super login (bad/good), dashboard + clients render; workspace
+employee and guest both bounced from `/super`; demo workspace grandfathered to
+Legacy and not locked; register → pending (no auto-login, phone captured) →
+login blocked with "Approval pending"; approve → Trial with expiry ≈ +3.0
+days → login works, Settings shows the plan card; suspend → live session cut +
+"Account suspended — contact support", fresh login blocked; reactivate →
+works; subscription forced expired → session cut + "Plan expired — contact
+support"; renew to Basic → expiry ≈ +30 days, login works; extend +10 →
+≈ +40 days; plan create/edit; Tiny plan (2 team / 2 leads) assigned → 3rd user
+blocked with the team-limit message, 3rd lead blocked with the lead-limit
+message; import after raising the lead limit to 4 → 2 added up to the limit,
+1 row reported limit-skipped; admin password reset flashes a one-time
+temporary password; workspace delete refuses a wrong typed name and succeeds
+with the exact name; super admin password change (wrong current rejected, new
+password logs in); **grandfather on reboot** — a workspace inserted with no
+subscription gets Legacy automatically at boot and its admin logs in.
+
+Bug found by this suite and fixed before deploy: `assignPlan()`'s INSERT had
+6 placeholders for 7 columns, so approve/renew/plan-assign silently failed
+(status flipped, no subscription row) — caught by the Trial-expiry assertion.
+
+Regression: fresh-DB run of the Phase-1 suite after these changes —
+**RESULT: 28 passed, 0 failed** (unchanged).

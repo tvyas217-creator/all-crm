@@ -3,8 +3,9 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { getDb, audit, seedStatuses } = require('../db');
-const { esc, nowISO } = require('../lib/util');
+const { esc, nowISO, cleanMobile, validMobile } = require('../lib/util');
 const { page } = require('../lib/layout');
+const { workspaceAccess } = require('../lib/plans');
 
 const r = express.Router();
 
@@ -40,6 +41,11 @@ r.post('/login', (req, res) => {
     req.session.flash = { type: 'err', msg: 'Ye account band hai. Admin se sampark karein.' };
     return res.redirect('/login');
   }
+  const acc = workspaceAccess(d, u.workspace_id);
+  if (!acc.ok) {
+    req.session.flash = { type: 'err', msg: acc.msg };
+    return res.redirect('/login');
+  }
   req.session.userId = u.id;
   d.prepare('UPDATE users SET last_login_at=?, last_active_at=? WHERE id=?').run(nowISO(), nowISO(), u.id);
   audit(d, u.workspace_id, u.id, 'login', u.email);
@@ -69,9 +75,11 @@ function registerForm(vals, err) {
   <h1 style="text-align:center">📞 All CRM</h1>
   <p class="mut center">Nayi company ke liye apna account banayein — saari leads aur team ka data bilkul alag rahega.</p>
   ${err ? `<div class="flash err">${esc(err)}</div>` : ''}
+  <p class="small center">Note: Nayi company ka account <b>approval ke baad</b> chalu hota hai — approve hote hi <b>3 din ka FREE trial</b> milta hai.</p>
   <form method="post" action="/register">
     <label>Company Name</label><input type="text" name="company" required value="${esc(vals.company || '')}" placeholder="e.g. Sharma Traders">
     <label>Your Name</label><input type="text" name="name" required value="${esc(vals.name || '')}" placeholder="Aapka naam">
+    <label>Mobile Number (optional)</label><input type="tel" name="phone" value="${esc(vals.phone || '')}" placeholder="98XXXXXXXX">
     <label>Email</label><input type="email" name="email" required autocomplete="username" value="${esc(vals.email || '')}" placeholder="you@company.com">
     <label>Password</label><input type="password" name="password" required autocomplete="new-password" placeholder="Kam se kam 6 characters">
     <label>Confirm Password</label><input type="password" name="confirm" required autocomplete="new-password" placeholder="Password dobara likhein">
@@ -97,10 +105,12 @@ r.post('/register', (req, res) => {
   }
   const company = String(req.body.company || '').trim();
   const name = String(req.body.name || '').trim();
+  const phoneRaw = cleanMobile(req.body.phone || '');
+  const phone = phoneRaw && validMobile(phoneRaw) ? phoneRaw : null;
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   const confirm = String(req.body.confirm || '');
-  const vals = { company, name, email };
+  const vals = { company, name, email, phone: req.body.phone || '' };
   const fail = (msg) => res.status(400).send(page(req, { title: 'Register', body: registerForm(vals, msg) }));
 
   if (!company || !name || !email || !password || !confirm) return fail('Saare fields bharna zaroori hai.');
@@ -116,11 +126,11 @@ r.post('/register', (req, res) => {
   const now = nowISO();
   let wsId = null; let userId = null;
   const create = d.transaction(() => {
-    wsId = d.prepare('INSERT INTO workspaces (name, timezone, api_token, created_at) VALUES (?,?,?,?)')
+    wsId = d.prepare("INSERT INTO workspaces (name, timezone, api_token, created_at, status) VALUES (?,?,?,?, 'pending')")
       .run(company, 'Asia/Kolkata', crypto.randomBytes(20).toString('hex'), now).lastInsertRowid;
     seedStatuses(d, wsId); // standard 10 statuses, clean slate — no demo data
-    userId = d.prepare('INSERT INTO users (workspace_id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)')
-      .run(wsId, name, email, bcrypt.hashSync(password, 10), 'admin', now).lastInsertRowid;
+    userId = d.prepare('INSERT INTO users (workspace_id, name, email, password_hash, role, phone, created_at) VALUES (?,?,?,?,?,?,?)')
+      .run(wsId, name, email, bcrypt.hashSync(password, 10), 'admin', phone, now).lastInsertRowid;
   });
   try {
     create();
@@ -131,11 +141,16 @@ r.post('/register', (req, res) => {
     throw e;
   }
 
-  req.session.userId = userId;
-  d.prepare('UPDATE users SET last_login_at=?, last_active_at=? WHERE id=?').run(nowISO(), nowISO(), userId);
-  audit(d, wsId, userId, 'register', company);
-  req.session.flash = { type: 'ok', msg: `Swagat hai! Aapki company "${company}" ban gayi hai — ab apni team aur leads add karein.` };
-  res.redirect('/');
+  audit(d, wsId, userId, 'register-pending', company);
+  // No login yet: the workspace stays "pending" until the Super Admin
+  // approves it (approval starts the 3-day Trial).
+  const body = `<div class="loginwrap"><div class="card">
+  <h1 style="text-align:center">✅ Request Mil Gayi!</h1>
+  <p>Namaste <b>${esc(name)}</b> ji, aapki company <b>"${esc(company)}"</b> ki request received ho gayi hai — ab ye <b>approval pending</b> hai.</p>
+  <p>Approve hote hi aap <b>${esc(email)}</b> se login kar payenge, aur aapko <b>3 din ka FREE trial</b> milega. Thoda intezaar karein — hum jald hi approve karenge.</p>
+  <p class="small center" style="margin-top:12px"><a href="/login">Login page par jayein →</a></p>
+  </div></div>`;
+  res.send(page(req, { title: 'Request Received', body }));
 });
 
 module.exports = r;

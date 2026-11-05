@@ -171,7 +171,83 @@ function initSchema(d) {
     created_at TEXT NOT NULL,
     ended_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    price INTEGER NOT NULL DEFAULT 0,
+    validity_days INTEGER,
+    max_employees INTEGER,
+    max_leads INTEGER,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id),
+    plan_id INTEGER NOT NULL REFERENCES plans(id),
+    starts_at TEXT NOT NULL,
+    expires_at TEXT,
+    note TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_subs_ws ON subscriptions(workspace_id, id);
+  CREATE TABLE IF NOT EXISTS super_admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
   `);
+}
+
+// ---------- Billing migration (industry-ready phase) ----------
+// Additive + idempotent + safe to run on every boot against the LIVE DB.
+// NULL validity/limits on a plan mean "never expires" / "unlimited".
+const PLAN_DEFS = [
+  // name, price (₹), validity_days, max_employees, max_leads, sort
+  ['Legacy', 0, null, null, null, 0],
+  ['Trial', 0, 3, 5, 200, 1],
+  ['Basic', 499, 30, 10, 2000, 2],
+  ['Pro', 999, 30, null, null, 3],
+];
+
+function addColumnIfMissing(d, table, col, ddl) {
+  const cols = d.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+
+function migrateBilling(d) {
+  addColumnIfMissing(d, 'workspaces', 'status', "status TEXT NOT NULL DEFAULT 'active'");
+  addColumnIfMissing(d, 'users', 'phone', 'phone TEXT');
+  const now = new Date().toISOString();
+
+  if (d.prepare('SELECT COUNT(*) c FROM plans').get().c === 0) {
+    const ins = d.prepare('INSERT INTO plans (name, price, validity_days, max_employees, max_leads, sort, created_at) VALUES (?,?,?,?,?,?,?)');
+    PLAN_DEFS.forEach(([name, price, validity, maxEmp, maxLeads, sort]) => ins.run(name, price, validity, maxEmp, maxLeads, sort, now));
+  }
+
+  if (d.prepare('SELECT COUNT(*) c FROM super_admins').get().c === 0) {
+    d.prepare('INSERT INTO super_admins (name, email, password_hash, created_at) VALUES (?,?,?,?)')
+      .run('Owner (Super Admin)', 'owner@allcrm.local', bcrypt.hashSync('Owner@123', 10), now);
+  }
+
+  // GRANDFATHERING: every workspace that predates billing (no subscription
+  // row at all) gets the never-expiring Legacy plan, so this deploy can
+  // never lock an existing customer out.
+  const legacy = d.prepare("SELECT id FROM plans WHERE name='Legacy'").get();
+  if (legacy) {
+    const need = d.prepare('SELECT w.id, w.created_at FROM workspaces w WHERE NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.workspace_id=w.id)').all();
+    if (need.length) {
+      const ins = d.prepare('INSERT INTO subscriptions (workspace_id, plan_id, starts_at, expires_at, note, created_by, created_at) VALUES (?,?,?,?,?,?,?)');
+      const tx = d.transaction(() => {
+        need.forEach((w) => ins.run(w.id, legacy.id, w.created_at, null, 'Grandfathered — billing se pehle ka workspace', 'migration', now));
+      });
+      tx();
+    }
+  }
 }
 
 // The standard 10 lead statuses every workspace starts with.
@@ -310,6 +386,7 @@ function openDb() {
   db.pragma('foreign_keys = ON');
   initSchema(db);
   seed(db);
+  migrateBilling(db);
   return db;
 }
 function getDb() { if (!db) openDb(); return db; }

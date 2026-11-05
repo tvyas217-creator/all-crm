@@ -42,6 +42,40 @@ npm start            # http://localhost:3000
 
 Change these passwords after first login (Settings → Users → Reset).
 
+## Super Admin (owner-only panel)
+
+**URL:** `/super/login` — completely separate from company logins; workspace users cannot open it.
+
+| | |
+|---|---|
+| Email | `owner@allcrm.local` |
+| Default password | `Owner@123` |
+
+> ⚠️ **Change this password immediately** after first login (Super panel → "🔑 Mera Password"). Anyone with it controls every company on the platform.
+
+From the Super panel the owner can:
+
+- **Dashboard** — total companies (active / trial / expired / suspended / pending), total users, total leads, this week's signups, and a "expiring within 3 days" list.
+- **Clients** — every company with owner name/email/mobile, team size, lead count, current plan, expiry, status and last activity; search + status filter. Per company: **Approve / Reject** pending signups, **Suspend** (login blocked, data untouched) / **Reactivate**, **Assign or change plan**, **Renew** (extends from current expiry — no days lost), **Extend by N days**, **reset the company admin's password** (temporary password shown once), and **Delete workspace** (hard delete, requires typing the exact company name).
+- **Plans** — create/edit/deactivate plans (name, ₹ price, validity days, max team size, max leads; blank = unlimited / never expires). Plans are never hard-deleted.
+
+### Plans seeded on first boot
+
+| Plan | Price | Validity | Max team | Max leads | Notes |
+|---|---|---|---|---|---|
+| Legacy | ₹0 | never | unlimited | unlimited | Auto-assigned to every pre-billing workspace (grandfathering) |
+| Trial | ₹0 | 3 days | 5 | 200 | Starts when a new signup is **approved** |
+| Basic | ₹499 | 30 days | 10 | 2000 | Placeholder pricing — edit in the panel |
+| Pro | ₹999 | 30 days | unlimited | unlimited | Placeholder pricing — edit in the panel |
+
+### Signup approval flow
+
+Public `/register` now creates the company in **pending** state (owner sees a "request received" page; login is blocked with an "Approval pending" message). The Super Admin approves it → the 3-day **Trial** starts at the approval moment. Reject → login stays blocked with a polite message. Company admins see their own plan, expiry, days-left and usage (team/leads vs limits) read-only in **Settings → Mera Plan**.
+
+Enforcement: suspended or plan-expired workspaces are blocked at login and their live sessions are cut on the next request ("Account suspended — contact support" / "Plan expired — contact support"). Team-size and lead limits are enforced on user creation, lead add, CSV import (imports fill up to the limit and report how many rows were skipped) and the lead webhook.
+
+**Grandfathering:** every workspace that existed before this billing layer (including the demo workspace) automatically received the never-expiring **Legacy** plan on first boot of the new code — no existing customer was locked out by the upgrade.
+
 ## Features (all working, no dummy buttons)
 
 - **Auth & roles** — bcrypt passwords, sessions; employees see only their own leads everywhere (list, search, detail, follow-ups).

@@ -4,6 +4,7 @@ const { getDb, touchLead, logEvent, audit } = require('../db');
 const { esc, nowISO, cleanMobile, validMobile, paginate, qs, fmtDT, fmtD, istDate, istDayRange } = require('../lib/util');
 const { page, statusChip } = require('../lib/layout');
 const { requireAuth, requireRole, canAccessLead } = require('../lib/auth');
+const { currentSub, leadCount } = require('../lib/plans');
 
 const r = express.Router();
 const mgr = requireRole('admin', 'manager');
@@ -168,6 +169,11 @@ r.post('/leads', requireAuth, (req, res) => {
   if (dup) {
     req.session.flash = { type: 'err', msg: `Ye number pehle se lead "${dup.name}" (#${dup.id}) me hai — duplicate nahi banega.` };
     return res.redirect('/leads/' + dup.id);
+  }
+  const subL = currentSub(d, u.workspace_id);
+  if (subL && subL.max_leads !== null && leadCount(d, u.workspace_id) >= subL.max_leads) {
+    req.session.flash = { type: 'err', msg: `Lead limit poori ho gayi hai — aapke ${subL.plan_name} plan me zyada se zyada ${subL.max_leads} leads ho sakti hain. Limit badhane ke liye plan upgrade karein (support se sampark karein).` };
+    return res.redirect('/leads');
   }
   const assigned = u.role === 'employee' ? u.id : (req.body.assigned_to ? Number(req.body.assigned_to) : null);
   const id = d.prepare(`INSERT INTO leads (workspace_id, name, mobile, alt_mobile, email, city, source, status_id, assigned_to, priority, created_by, created_at, updated_at, last_activity_at)

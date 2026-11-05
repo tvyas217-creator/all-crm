@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { getDb } = require('../db');
 const { esc, nowISO, cleanMobile, validMobile, fmtT, timeAgo } = require('../lib/util');
 const { requireAuth } = require('../lib/auth');
+const { workspaceAccess, leadRoom } = require('../lib/plans');
 
 const r = express.Router();
 
@@ -33,6 +34,9 @@ r.post('/api/webhook/leads', (req, res) => {
   const token = req.get('x-api-token') || req.query.token || '';
   const ws = d.prepare('SELECT * FROM workspaces WHERE api_token=?').get(token);
   if (!ws || !token) return res.status(401).json({ ok: false, error: 'Invalid API token' });
+  const acc = workspaceAccess(d, ws.id);
+  if (!acc.ok) return res.status(403).json({ ok: false, error: acc.msg });
+  if (!leadRoom(d, ws.id).ok) return res.status(403).json({ ok: false, error: 'Lead limit reached — is workspace ke plan ki lead limit poori ho gayi hai' });
   const b = req.body || {};
   const mobile = cleanMobile(b.mobile || b.phone || b.number || '');
   const name = String(b.name || '').trim();

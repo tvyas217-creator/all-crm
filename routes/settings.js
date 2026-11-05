@@ -5,9 +5,10 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { getDb, closeDb, openDb, DB_PATH, audit } = require('../db');
-const { esc, nowISO, fmtDT } = require('../lib/util');
+const { esc, nowISO, fmtDT, fmtD } = require('../lib/util');
 const { page } = require('../lib/layout');
 const { requireAuth, requireRole } = require('../lib/auth');
+const { currentSub, daysLeft, userCount, leadCount } = require('../lib/plans');
 
 const r = express.Router();
 const admin = requireRole('admin');
@@ -15,7 +16,20 @@ const admin = requireRole('admin');
 r.get('/settings', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const ws = d.prepare('SELECT * FROM workspaces WHERE id=?').get(u.workspace_id);
+  const sub = currentSub(d, u.workspace_id);
+  const dl = daysLeft(sub);
+  const ucnt = userCount(d, u.workspace_id);
+  const lcnt = leadCount(d, u.workspace_id);
+  const planCard = sub ? `<div class="card"><h3 style="margin-top:0">📦 Mera Plan</h3>
+  <dl class="kv">
+    <dt>Plan</dt><dd><b>${esc(sub.plan_name)}</b> (₹${sub.plan_price})</dd>
+    <dt>Expiry</dt><dd>${sub.expires_at ? fmtD(sub.expires_at) + (dl !== null ? ` — <b>${dl < 0 ? 'expire ho gaya' : dl + ' din baaki'}</b>` : '') : 'Kabhi nahi (unlimited plan)'}</dd>
+    <dt>Team</dt><dd>${ucnt} users ${sub.max_employees ? `/ ${sub.max_employees} tak` : '(unlimited)'}</dd>
+    <dt>Leads</dt><dd>${lcnt} leads ${sub.max_leads ? `/ ${sub.max_leads} tak` : '(unlimited)'}</dd>
+  </dl>
+  <p class="small mut">Plan badalna ya renew karna ho to support se sampark karein. Ye jaankari sirf dekhne ke liye hai.</p></div>` : '';
   const body = `<h1>⚙️ Settings</h1>
+  ${planCard}
   <div class="card"><h3 style="margin-top:0">🏢 Company</h3>
   <form method="post" action="/settings">
     <label>Company / Workspace Naam</label><input name="name" value="${esc(ws.name)}">
@@ -150,6 +164,11 @@ r.post('/settings/users', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const email = String(req.body.email || '').trim().toLowerCase();
   if (d.prepare('SELECT id FROM users WHERE email=?').get(email)) { req.session.flash = { type: 'err', msg: 'Ye email pehle se hai.' }; return res.redirect('/settings/users'); }
+  const subU = currentSub(d, u.workspace_id);
+  if (subU && subU.max_employees !== null && userCount(d, u.workspace_id) >= subU.max_employees) {
+    req.session.flash = { type: 'err', msg: `Team limit poori ho gayi hai — aapke ${subU.plan_name} plan me zyada se zyada ${subU.max_employees} users ho sakte hain. Aur users ke liye plan upgrade karein (support se sampark karein).` };
+    return res.redirect('/settings/users');
+  }
   const role = ['admin', 'manager', 'employee'].includes(req.body.role) ? req.body.role : 'employee';
   d.prepare('INSERT INTO users (workspace_id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)')
     .run(u.workspace_id, String(req.body.name || '').trim(), email, bcrypt.hashSync(String(req.body.password || '123456'), 10), role, nowISO());

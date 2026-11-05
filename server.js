@@ -39,6 +39,7 @@ app.use('/', require('./routes/imports'));
 app.use('/', require('./routes/monitor'));
 app.use('/', require('./routes/whatsapp'));
 app.use('/', require('./routes/settings'));
+app.use('/', require('./routes/super'));
 
 app.use((req, res) => {
   if (!req.user) return res.redirect('/login');
