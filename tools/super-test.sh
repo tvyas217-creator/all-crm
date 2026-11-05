@@ -29,11 +29,11 @@ grep -q "chal raha hai" $SCRATCH/boot.log; chk $? "server boots on scratch DB"
 echo "== 1. Super admin auth =="
 code=$(curl -s -o /dev/null -w "%{http_code}" $B/super/login); [ "$code" = "200" ]; chk $? "GET /super/login -> 200"
 curl -s -c ${J}_sup.txt -o /dev/null -d "email=owner@allcrm.local&password=WrongPass" $B/super/login
-curl -s -b ${J}_sup.txt $B/super/login | grep -q "galat hai"; chk $? "super login: wrong password rejected"
+curl -s -b ${J}_sup.txt $B/super/login | grep -q "Incorrect email or password"; chk $? "super login: wrong password rejected"
 out=$(curl -s -c ${J}_sup.txt -o /dev/null -w "%{redirect_url}" -d "email=owner@allcrm.local&password=Owner@123" $B/super/login)
 [ "$out" = "$B/super" ]; chk $? "super login: correct password -> /super"
 curl -s -b ${J}_sup.txt $B/super | grep -q "Total Companies"; chk $? "super dashboard renders totals"
-curl -s -b ${J}_sup.txt $B/super | grep -q "Andar Expiry"; chk $? "super dashboard: expiring-soon card renders"
+curl -s -b ${J}_sup.txt $B/super | grep -q "Expiring Within 3 Days"; chk $? "super dashboard: expiring-soon card renders"
 curl -s -b ${J}_sup.txt $B/super/clients | grep -q "All CRM Demo"; chk $? "clients list shows demo company"
 
 echo "== 2. Workspace user + guest cannot enter /super =="
@@ -49,7 +49,7 @@ P=$(dbq "db.prepare('SELECT p.name FROM subscriptions s JOIN plans p ON p.id=s.p
 curl -s -b ${J}_e1.txt $B/ | grep -q "Rahul Verma"; chk $? "demo employee dashboard works (not locked)"
 
 echo "== 4. New signup -> pending -> login blocked =="
-curl -s -d "company=QA Traders&name=QA Owner&phone=9812345670&email=qa@qa.local&password=Qa@12345&confirm=Qa@12345" $B/register | grep -q "Request Mil Gayi"; chk $? "register shows 'request received' page (no auto-login)"
+curl -s -d "company=QA Traders&name=QA Owner&phone=9812345670&email=qa@qa.local&password=Qa@12345&confirm=Qa@12345" $B/register | grep -q "Request Received"; chk $? "register shows 'request received' page (no auto-login)"
 WSID=$(dbq "db.prepare(\"SELECT id FROM workspaces WHERE name='QA Traders'\").get().id")
 ST=$(dbq "db.prepare('SELECT status FROM workspaces WHERE id=$WSID').get().status")
 [ "$ST" = "pending" ]; chk $? "DB: new workspace status = pending"
@@ -66,7 +66,7 @@ ST=$(dbq "db.prepare('SELECT status FROM workspaces WHERE id=$WSID').get().statu
 node -e "const db=require('$APP_DIR/node_modules/better-sqlite3')('$DBF',{readonly:true});const s=db.prepare('SELECT s.*,p.name FROM subscriptions s JOIN plans p ON p.id=s.plan_id WHERE s.workspace_id=$WSID ORDER BY s.id DESC LIMIT 1').get();const dd=(new Date(s.expires_at)-Date.now())/864e5;if(s.name!=='Trial'||dd<2.9||dd>3.1){console.log('BAD',s.name,dd);process.exit(1)}" ; chk $? "DB: subscription = Trial, expiry ~3 days from approval"
 out=$(curl -s -c ${J}_qa.txt -o /dev/null -w "%{redirect_url}" -d "email=qa@qa.local&password=Qa@12345" $B/login)
 [ "$out" = "$B/" ]; chk $? "approved owner can login"
-curl -s -b ${J}_qa.txt $B/settings | grep -q "Mera Plan"; chk $? "settings shows read-only 'Mera Plan' card"
+curl -s -b ${J}_qa.txt $B/settings | grep -q "My Plan"; chk $? "settings shows read-only 'My Plan' card"
 curl -s -b ${J}_qa.txt $B/settings | grep -q "Trial"; chk $? "plan card shows Trial"
 
 echo "== 6. Suspend -> session cut + login blocked; Activate -> works =="
@@ -109,21 +109,21 @@ curl -s -b ${J}_qa.txt -o /dev/null -d "name=U Two&email=u2@qa.local&password=Us
 N=$(dbq "db.prepare('SELECT COUNT(*) c FROM users WHERE workspace_id=$WSID').get().c")
 [ "$N" = "2" ]; chk $? "user #2 (up to limit) created"
 curl -s -b ${J}_qa.txt -o /dev/null -d "name=U Three&email=u3@qa.local&password=User@123&role=employee" $B/settings/users
-curl -s -b ${J}_qa.txt $B/settings/users | grep -q "Team limit poori"; chk $? "user #3 blocked with team-limit message"
+curl -s -b ${J}_qa.txt $B/settings/users | grep -q "Team limit reached"; chk $? "user #3 blocked with team-limit message"
 N=$(dbq "db.prepare('SELECT COUNT(*) c FROM users WHERE workspace_id=$WSID').get().c")
 [ "$N" = "2" ]; chk $? "DB: still exactly 2 users"
 curl -s -b ${J}_qa.txt -o /dev/null -d "name=Lead One&mobile=9811111111" $B/leads
 curl -s -b ${J}_qa.txt -o /dev/null -d "name=Lead Two&mobile=9822222222" $B/leads
 curl -s -b ${J}_qa.txt -o /dev/null -d "name=Lead Three&mobile=9833333333" $B/leads
-curl -s -b ${J}_qa.txt $B/leads | grep -q "Lead limit poori"; chk $? "lead #3 blocked with lead-limit message"
+curl -s -b ${J}_qa.txt $B/leads | grep -q "Lead limit reached"; chk $? "lead #3 blocked with lead-limit message"
 N=$(dbq "db.prepare('SELECT COUNT(*) c FROM leads WHERE workspace_id=$WSID').get().c")
 [ "$N" = "2" ]; chk $? "DB: exactly 2 leads"
 # raise lead limit to 4, then import 3 rows -> 2 fit, 1 limit-skipped
 curl -s -b ${J}_sup.txt -o /dev/null -d "name=Tiny&price=149&validity_days=30&max_employees=2&max_leads=4&sort=9&is_active=on" $B/super/plans/$TINY
 CSV64=$(printf 'Name,Mobile\nImp One,9844444444\nImp Two,9855555555\nImp Three,9866666666' | base64 -w0)
 IMP=$(curl -s -b ${J}_qa.txt -H 'Content-Type: application/json' -d "{\"filename\":\"t.csv\",\"data_base64\":\"$CSV64\",\"assign\":\"\"}" $B/import)
-echo "$IMP" | grep -q "2</b> leads jud gayi"; chk $? "import: 2 leads added up to the limit"
-echo "$IMP" | grep -q "limit ki wajah se nahi judi"; chk $? "import: report counts the limit-skipped row"
+echo "$IMP" | grep -q "2</b> leads added"; chk $? "import: 2 leads added up to the limit"
+echo "$IMP" | grep -q "not added because of the limit"; chk $? "import: report counts the limit-skipped row"
 N=$(dbq "db.prepare('SELECT COUNT(*) c FROM leads WHERE workspace_id=$WSID').get().c")
 [ "$N" = "4" ]; chk $? "DB: leads now exactly at limit (4)"
 
@@ -143,7 +143,7 @@ N=$(dbq "db.prepare('SELECT COUNT(*) c FROM workspaces WHERE id=$DELID').get().c
 
 echo "== 12. Super admin changes own password =="
 curl -s -b ${J}_sup.txt -o /dev/null -d "current=GalatPass&next=NewOwner@123&confirm=NewOwner@123" $B/super/password
-curl -s -b ${J}_sup.txt $B/super/password | grep -q "galat hai"; chk $? "password change: wrong current rejected"
+curl -s -b ${J}_sup.txt $B/super/password | grep -q "Current password is incorrect"; chk $? "password change: wrong current rejected"
 curl -s -b ${J}_sup.txt -o /dev/null -d "current=Owner@123&next=NewOwner@123&confirm=NewOwner@123" $B/super/password
 curl -s -b ${J}_sup.txt -o /dev/null -X POST $B/super/logout
 out=$(curl -s -c ${J}_sup2.txt -o /dev/null -w "%{redirect_url}" -d "email=owner@allcrm.local&password=NewOwner@123" $B/super/login)

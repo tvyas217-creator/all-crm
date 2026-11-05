@@ -17,7 +17,7 @@ r.get('/api/live', requireAuth, (req, res) => {
     WHERE l.workspace_id=? AND c.state='completed' ORDER BY c.saved_at DESC LIMIT 12`).all(u.workspace_id);
   const feedHtml = rows.length ? rows.map((c) => `<div class="leadrow"><div class="info"><div class="nm" style="font-size:15px">${esc(c.user_name)} → <a href="/leads/${c.lid}">${esc(c.lead_name)}</a></div>
     <div class="sub">${c.status_name ? `<span class="chip" style="background:${esc(c.status_color)}">${esc(c.status_name)}</span>` : ''} ${esc(c.remark || '')} · ${timeAgo(c.saved_at)}</div></div></div>`).join('')
-    : '<p class="mut">Abhi koi call activity nahi hai.</p>';
+    : '<p class="mut">No call activity yet.</p>';
   const team = (u.role !== 'employee') ? d.prepare(`SELECT u2.id, u2.name,
       EXISTS(SELECT 1 FROM calls c WHERE c.user_id=u2.id AND c.state='started') AS on_call,
       (SELECT MAX(c2.saved_at) FROM calls c2 WHERE c2.user_id=u2.id AND c2.state='completed') AS last_done,
@@ -36,11 +36,11 @@ r.post('/api/webhook/leads', (req, res) => {
   if (!ws || !token) return res.status(401).json({ ok: false, error: 'Invalid API token' });
   const acc = workspaceAccess(d, ws.id);
   if (!acc.ok) return res.status(403).json({ ok: false, error: acc.msg });
-  if (!leadRoom(d, ws.id).ok) return res.status(403).json({ ok: false, error: 'Lead limit reached — is workspace ke plan ki lead limit poori ho gayi hai' });
+  if (!leadRoom(d, ws.id).ok) return res.status(403).json({ ok: false, error: 'Lead limit reached — this workspace has reached its plan lead limit' });
   const b = req.body || {};
   const mobile = cleanMobile(b.mobile || b.phone || b.number || '');
   const name = String(b.name || '').trim();
-  if (!name || !validMobile(mobile)) return res.status(400).json({ ok: false, error: 'name aur sahi 10-digit mobile zaroori hai' });
+  if (!name || !validMobile(mobile)) return res.status(400).json({ ok: false, error: 'A name and a valid 10-digit mobile number are required' });
   const dup = d.prepare('SELECT id FROM leads WHERE workspace_id=? AND mobile=?').get(ws.id, mobile);
   if (dup) return res.status(200).json({ ok: true, duplicate: true, lead_id: dup.id });
   const stNew = d.prepare("SELECT id FROM statuses WHERE workspace_id=? ORDER BY sort LIMIT 1").get(ws.id);

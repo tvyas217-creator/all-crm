@@ -2,7 +2,7 @@
 const express = require('express');
 const { getDb, touchLead } = require('../db');
 const { esc, nowISO, fmtDT, istDate, istDayRange, istToISO } = require('../lib/util');
-const { page } = require('../lib/layout');
+const { page, info } = require('../lib/layout');
 const { requireAuth } = require('../lib/auth');
 
 const r = express.Router();
@@ -27,12 +27,12 @@ r.get('/followups', requireAuth, (req, res) => {
     overdue: d.prepare(`SELECT COUNT(*) c FROM follow_ups f JOIN leads l ON l.id=f.lead_id WHERE ${teamView ? 'l.workspace_id=?' : 'f.user_id=?'} AND f.done=0 AND f.due_at<?`).get(teamView ? u.workspace_id : u.id, t0).c,
     upcoming: d.prepare(`SELECT COUNT(*) c FROM follow_ups f JOIN leads l ON l.id=f.lead_id WHERE ${teamView ? 'l.workspace_id=?' : 'f.user_id=?'} AND f.done=0 AND f.due_at>=?`).get(teamView ? u.workspace_id : u.id, t1).c,
   };
-  const body = `<h1>⏰ Follow-Ups</h1>
+  const body = `<h1>⏰ Follow-Ups${info('Follow-ups are your call reminders, set from the after-call sheet. Today shows what is due today, Overdue shows missed ones, and Upcoming shows future ones. Mark a follow-up Done when finished, or Reschedule it to a later date. Managers can switch between their own follow-ups and the whole team\'s.')}</h1>
   <div class="rowflex" style="margin-bottom:12px">
-    <a class="btn sm ${tab === 'today' ? '' : 'ghost'}" href="/followups?tab=today${teamView ? '&scope=team' : ''}">Aaj (${counts.today})</a>
+    <a class="btn sm ${tab === 'today' ? '' : 'ghost'}" href="/followups?tab=today${teamView ? '&scope=team' : ''}">Today (${counts.today})</a>
     <a class="btn sm ${tab === 'overdue' ? 'red' : 'ghost'}" href="/followups?tab=overdue${teamView ? '&scope=team' : ''}">Overdue (${counts.overdue})</a>
     <a class="btn sm ${tab === 'upcoming' ? '' : 'ghost'}" href="/followups?tab=upcoming${teamView ? '&scope=team' : ''}">Upcoming (${counts.upcoming})</a>
-    ${u.role !== 'employee' ? `<a class="btn sm ghost" href="/followups?tab=${tab}${teamView ? '' : '&scope=team'}">${teamView ? '👤 Sirf Mere' : '👥 Poori Team'}</a>` : ''}
+    ${u.role !== 'employee' ? `<a class="btn sm ghost" href="/followups?tab=${tab}${teamView ? '' : '&scope=team'}">${teamView ? '👤 Mine Only' : '👥 Whole Team'}</a>` : ''}
   </div>
   <div class="card" style="padding:6px 14px">${rows.length ? rows.map((f) => `<div class="leadrow"><div class="info">
       <a class="nm" href="/leads/${f.lead_id}">${esc(f.lead_name)}</a>
@@ -41,8 +41,8 @@ r.get('/followups', requireAuth, (req, res) => {
     </div>
     <div class="rowflex" style="padding:0 4px 11px">
       <form method="post" action="/followups/${f.id}/done"><button class="btn sm" type="submit">✅ Done</button></form>
-      <form method="post" action="/followups/${f.id}/reschedule" class="rowflex"><input type="date" name="date" required style="min-height:38px;max-width:170px"><button class="btn sm ghost" type="submit">📅 Aage Badhayein</button></form>
-    </div>`).join('') : '<p class="mut" style="padding:12px 4px">Is tab me koi follow-up nahi hai. 🎉</p>'}</div>`;
+      <form method="post" action="/followups/${f.id}/reschedule" class="rowflex"><input type="date" name="date" required style="min-height:38px;max-width:170px"><button class="btn sm ghost" type="submit">📅 Reschedule</button></form>
+    </div>`).join('') : '<p class="mut" style="padding:12px 4px">No follow-ups in this tab. 🎉</p>'}</div>`;
   res.send(page(req, { title: 'Follow-Ups', body, active: 'followups' }));
 });
 

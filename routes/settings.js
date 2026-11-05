@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { getDb, closeDb, openDb, DB_PATH, audit } = require('../db');
 const { esc, nowISO, fmtDT, fmtD } = require('../lib/util');
-const { page } = require('../lib/layout');
+const { page, info } = require('../lib/layout');
 const { requireAuth, requireRole } = require('../lib/auth');
 const { currentSub, daysLeft, userCount, leadCount } = require('../lib/plans');
 
@@ -20,27 +20,27 @@ r.get('/settings', requireAuth, admin, (req, res) => {
   const dl = daysLeft(sub);
   const ucnt = userCount(d, u.workspace_id);
   const lcnt = leadCount(d, u.workspace_id);
-  const planCard = sub ? `<div class="card"><h3 style="margin-top:0">📦 Mera Plan</h3>
+  const planCard = sub ? `<div class="card"><h3 style="margin-top:0">📦 My Plan ${info('This card shows your current plan, when it expires, and how much of your team and lead limits you have used. When a limit is reached, new users or leads cannot be added until you upgrade. To change or renew your plan, please contact support — this card is view-only.')}</h3>
   <dl class="kv">
     <dt>Plan</dt><dd><b>${esc(sub.plan_name)}</b> (₹${sub.plan_price})</dd>
-    <dt>Expiry</dt><dd>${sub.expires_at ? fmtD(sub.expires_at) + (dl !== null ? ` — <b>${dl < 0 ? 'expire ho gaya' : dl + ' din baaki'}</b>` : '') : 'Kabhi nahi (unlimited plan)'}</dd>
-    <dt>Team</dt><dd>${ucnt} users ${sub.max_employees ? `/ ${sub.max_employees} tak` : '(unlimited)'}</dd>
-    <dt>Leads</dt><dd>${lcnt} leads ${sub.max_leads ? `/ ${sub.max_leads} tak` : '(unlimited)'}</dd>
+    <dt>Expiry</dt><dd>${sub.expires_at ? fmtD(sub.expires_at) + (dl !== null ? ` — <b>${dl < 0 ? 'expired' : dl + ' days left'}</b>` : '') : 'Never (unlimited plan)'}</dd>
+    <dt>Team</dt><dd>${ucnt} users ${sub.max_employees ? `of ${sub.max_employees}` : '(unlimited)'}</dd>
+    <dt>Leads</dt><dd>${lcnt} leads ${sub.max_leads ? `of ${sub.max_leads}` : '(unlimited)'}</dd>
   </dl>
-  <p class="small mut">Plan badalna ya renew karna ho to support se sampark karein. Ye jaankari sirf dekhne ke liye hai.</p></div>` : '';
+  <p class="small mut">To change or renew your plan, please contact support. This information is view-only.</p></div>` : '';
   const body = `<h1>⚙️ Settings</h1>
   ${planCard}
   <div class="card"><h3 style="margin-top:0">🏢 Company</h3>
   <form method="post" action="/settings">
-    <label>Company / Workspace Naam</label><input name="name" value="${esc(ws.name)}">
-    <div class="grid2"><div><label>Lost Lead Din (itne din activity na ho to "thandi" lead)</label><input type="number" name="lost_lead_days" min="1" max="90" value="${ws.lost_lead_days}"></div>
+    <label>Company / Workspace Name</label><input name="name" value="${esc(ws.name)}">
+    <div class="grid2"><div><label>Lost Lead Days (days with no activity before a lead counts as "cold")</label><input type="number" name="lost_lead_days" min="1" max="90" value="${ws.lost_lead_days}"></div>
     <div><label>Auto-Dialer Redial Attempts (per session)</label><input type="number" name="redial_attempts" min="0" max="5" value="${ws.redial_attempts}"></div></div>
-    <p style="margin-top:12px"><button class="btn" type="submit">Save Karein</button></p></form></div>
-  <div class="card"><h3 style="margin-top:0">🔗 Lead Auto-Import API (Phase 3 ready)</h3>
-  <p class="small">Dusre tools (website form, ads) is token se seedha lead bhej sakte hain:<br>
+    <p style="margin-top:12px"><button class="btn" type="submit">Save</button></p></form></div>
+  <div class="card"><h3 style="margin-top:0">🔗 Lead Auto-Import API (Phase 3 ready) ${info('Other tools — your website form, ad platforms, Google Sheets — can send leads straight into this CRM using this secret token. Send a POST request to the URL below with the token in the x-api-token header and the lead as JSON. Keep the token private: anyone who has it can add leads. If it leaks, generate a new one — the old token stops working immediately.')}</h3>
+  <p class="small">Other tools (website forms, ads) can send leads directly using this token:<br>
   <code style="word-break:break-all">POST /api/webhook/leads · Header: x-api-token: ${esc(ws.api_token || '')}</code><br>
   Body (JSON): {"name":"...","mobile":"98XXXXXXXX","city":"...","source":"Website"}</p>
-  <form method="post" action="/settings/regen-token" onsubmit="return confirm('Purana token band ho jayega. Pakka?')"><button class="btn sm ghost" type="submit">🔄 Naya Token Banayein</button></form></div>
+  <form method="post" action="/settings/regen-token" onsubmit="return confirm('The old token will stop working. Continue?')"><button class="btn sm ghost" type="submit">🔄 Generate New Token</button></form></div>
   <div class="card"><h3 style="margin-top:0">🧭 Admin Sections</h3>
   <div class="rowflex">
     <a class="btn ghost" href="/settings/statuses">🔄 Lead Statuses</a>
@@ -48,13 +48,13 @@ r.get('/settings', requireAuth, admin, (req, res) => {
     <a class="btn ghost" href="/templates">💬 WA Templates</a>
     <a class="btn ghost" href="/settings/users">👥 Users (Team)</a>
   </div></div>
-  <div class="card"><h3 style="margin-top:0">💾 Data Backup</h3>
-  <p class="small">Poora database ek file me download karein. Restore karne par maujooda data us backup se badal jayega.</p>
-  <div class="rowflex"><a class="btn blue" href="/settings/backup">⬇ Backup Download</a></div>
-  <label style="margin-top:14px">Backup Restore (.db file)</label>
+  <div class="card"><h3 style="margin-top:0">💾 Data Backup ${info('Download Backup saves your entire database (leads, users, calls, settings) as one file — keep it somewhere safe. Restore replaces ALL current data with the backup file you choose, and everyone is logged out. Only restore a backup when you are sure, for example after a serious mistake.')}</h3>
+  <p class="small">Download the entire database as a single file. Restoring will replace the current data with that backup.</p>
+  <div class="rowflex"><a class="btn blue" href="/settings/backup">⬇ Download Backup</a></div>
+  <label style="margin-top:14px">Restore Backup (.db file)</label>
   <input type="file" id="rst_file" accept=".db">
-  <p><button class="btn red" type="button" onclick="doRestore()">♻️ Restore Karein (dhyaan se!)</button></p>
-  <script>function doRestore(){var f=document.getElementById('rst_file').files[0];if(!f){alert('Pehle .db file chunein');return}if(!confirm('Pakka restore karein? Abhi ka data backup se badal jayega.'))return;var rd=new FileReader();rd.onload=function(){fetch('/settings/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data_base64:String(rd.result).split(',')[1]})}).then(function(r){return r.json()}).then(function(j){alert(j.msg||j.error);if(j.ok)location.href='/login'})};rd.readAsDataURL(f)}</script></div>`;
+  <p><button class="btn red" type="button" onclick="doRestore()">♻️ Restore (use with care!)</button></p>
+  <script>function doRestore(){var f=document.getElementById('rst_file').files[0];if(!f){alert('Please choose a .db file first');return}if(!confirm('Are you sure you want to restore? Current data will be replaced by the backup.'))return;var rd=new FileReader();rd.onload=function(){fetch('/settings/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data_base64:String(rd.result).split(',')[1]})}).then(function(r){return r.json()}).then(function(j){alert(j.msg||j.error);if(j.ok)location.href='/login'})};rd.readAsDataURL(f)}</script></div>`;
   res.send(page(req, { title: 'Settings', body, active: 'settings' }));
 });
 
@@ -62,13 +62,13 @@ r.post('/settings', requireAuth, admin, (req, res) => {
   const d = getDb();
   d.prepare('UPDATE workspaces SET name=?, lost_lead_days=?, redial_attempts=? WHERE id=?')
     .run(String(req.body.name || 'All CRM').trim(), Math.min(90, Math.max(1, parseInt(req.body.lost_lead_days, 10) || 7)), Math.min(5, Math.max(0, parseInt(req.body.redial_attempts, 10) || 0)), req.user.workspace_id);
-  req.session.flash = { type: 'ok', msg: 'Settings save ho gayi ✅' };
+  req.session.flash = { type: 'ok', msg: 'Settings saved ✅' };
   res.redirect('/settings');
 });
 
 r.post('/settings/regen-token', requireAuth, admin, (req, res) => {
   getDb().prepare('UPDATE workspaces SET api_token=? WHERE id=?').run(crypto.randomBytes(20).toString('hex'), req.user.workspace_id);
-  req.session.flash = { type: 'ok', msg: 'Naya API token ban gaya.' };
+  req.session.flash = { type: 'ok', msg: 'New API token generated.' };
   res.redirect('/settings');
 });
 
@@ -76,20 +76,20 @@ r.post('/settings/regen-token', requireAuth, admin, (req, res) => {
 r.get('/settings/statuses', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const rows = d.prepare('SELECT s.*, (SELECT COUNT(*) FROM leads l WHERE l.status_id=s.id) used FROM statuses s WHERE s.workspace_id=? ORDER BY s.sort').all(u.workspace_id);
-  const body = `<h1>🔄 Lead Statuses</h1><p><a href="/settings">← Settings</a></p>
+  const body = `<h1>🔄 Lead Statuses ${info('Statuses are the stages a lead moves through — New, Interested, Converted, and so on. Employees pick one after every call. Tick "Counts as Connected" for statuses that mean you actually spoke to the customer (like Interested or Call Back); these power the Connected counts in reports. The number sets the display order. A status used by leads cannot be deleted — rename it instead.')}</h1><p><a href="/settings">← Settings</a></p>
   ${rows.map((s) => `<div class="card"><form method="post" action="/settings/statuses/${s.id}" class="rowflex">
     <input type="color" name="color" value="${esc(s.color)}" style="width:56px;min-height:44px;padding:2px">
     <input name="name" value="${esc(s.name)}" style="flex:1;min-width:140px" required>
-    <label style="margin:0"><input type="checkbox" name="counts_connected" ${s.counts_connected ? 'checked' : ''}> Connected ginein</label>
+    <label style="margin:0"><input type="checkbox" name="counts_connected" ${s.counts_connected ? 'checked' : ''}> Counts as Connected</label>
     <input type="number" name="sort" value="${s.sort}" style="width:76px" title="Order">
     <button class="btn sm" type="submit">Save</button>
-    ${s.used ? `<span class="small mut">${s.used} leads use kar rahi hain</span>` : `<button class="btn sm red" formaction="/settings/statuses/${s.id}/delete" type="submit" onclick="return confirm('Delete karein?')">Delete</button>`}
+    ${s.used ? `<span class="small mut">Used by ${s.used} leads</span>` : `<button class="btn sm red" formaction="/settings/statuses/${s.id}/delete" type="submit" onclick="return confirm('Delete this status?')">Delete</button>`}
   </form></div>`).join('')}
-  <div class="card"><h3 style="margin-top:0">➕ Naya Status</h3>
-  <form method="post" action="/settings/statuses" class="rowflex"><input name="name" required placeholder="Status naam" style="flex:1;min-width:140px">
+  <div class="card"><h3 style="margin-top:0">➕ New Status</h3>
+  <form method="post" action="/settings/statuses" class="rowflex"><input name="name" required placeholder="Status name" style="flex:1;min-width:140px">
   <input type="color" name="color" value="#0e9f6e" style="width:56px;min-height:44px;padding:2px">
-  <label style="margin:0"><input type="checkbox" name="counts_connected"> Connected</label>
-  <button class="btn" type="submit">Jodein</button></form></div>`;
+  <label style="margin:0"><input type="checkbox" name="counts_connected"> Counts as Connected</label>
+  <button class="btn" type="submit">Add</button></form></div>`;
   res.send(page(req, { title: 'Statuses', body, active: 'settings' }));
 });
 
@@ -116,15 +116,15 @@ r.post('/settings/statuses/:id/delete', requireAuth, admin, (req, res) => {
 r.get('/settings/fields', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const rows = d.prepare('SELECT * FROM custom_fields WHERE workspace_id=? ORDER BY sort, id').all(u.workspace_id);
-  const body = `<h1>🧩 Custom Fields</h1><p><a href="/settings">← Settings</a></p>
+  const body = `<h1>🧩 Custom Fields ${info('Custom fields capture extra details on every lead — for example Area, Budget or Requirement. A field you add here appears on the lead form, the lead page, imports and exports. Match an import column to a field by using the same name as the column header. Deleting a field also deletes its saved values on all leads.')}</h1><p><a href="/settings">← Settings</a></p>
   ${rows.map((f) => `<div class="card rowflex" style="justify-content:space-between"><span><b>${esc(f.name)}</b> <span class="mut">(${esc(f.type)}${f.type === 'dropdown' ? ': ' + esc(f.options || '') : ''})</span></span>
-  <form method="post" action="/settings/fields/${f.id}/delete" onsubmit="return confirm('Field delete karein? Uska data bhi jayega.')"><button class="btn sm red" type="submit">Delete</button></form></div>`).join('') || '<div class="card mut">Koi custom field nahi hai.</div>'}
-  <div class="card"><h3 style="margin-top:0">➕ Naya Field</h3>
+  <form method="post" action="/settings/fields/${f.id}/delete" onsubmit="return confirm('Delete this field? Its saved data will also be removed.')"><button class="btn sm red" type="submit">Delete</button></form></div>`).join('') || '<div class="card mut">No custom fields yet.</div>'}
+  <div class="card"><h3 style="margin-top:0">➕ New Field</h3>
   <form method="post" action="/settings/fields">
-  <label>Field Naam</label><input name="name" required placeholder="jaise Area / Requirement">
+  <label>Field Name</label><input name="name" required placeholder="e.g. Area / Requirement">
   <label>Type</label><select name="type"><option value="text">Text</option><option value="number">Number</option><option value="dropdown">Dropdown</option><option value="date">Date</option></select>
-  <label>Dropdown Options (comma se alag — sirf dropdown ke liye)</label><input name="options" placeholder="Option 1, Option 2, Option 3">
-  <p><button class="btn" type="submit">Field Jodein</button></p></form></div>`;
+  <label>Dropdown Options (comma-separated — for dropdowns only)</label><input name="options" placeholder="Option 1, Option 2, Option 3">
+  <p><button class="btn" type="submit">Add Field</button></p></form></div>`;
   res.send(page(req, { title: 'Custom Fields', body, active: 'settings' }));
 });
 r.post('/settings/fields', requireAuth, admin, (req, res) => {
@@ -144,35 +144,35 @@ r.post('/settings/fields/:id/delete', requireAuth, admin, (req, res) => {
 r.get('/settings/users', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const rows = d.prepare('SELECT * FROM users WHERE workspace_id=? ORDER BY role, name').all(u.workspace_id);
-  const body = `<h1>👥 Users (Team)</h1><p><a href="/settings">← Settings</a></p>
-  <div class="card"><div class="tblwrap"><table><tr><th>Naam</th><th>Email</th><th>Role</th><th>Haal</th><th>Last Login</th><th>Actions</th></tr>
-  ${rows.map((x) => `<tr><td><b>${esc(x.name)}</b></td><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td>${x.active ? '✅ Active' : '⛔ Band'}</td><td>${fmtDT(x.last_login_at)}</td>
+  const body = `<h1>👥 Users (Team) ${info('Add your team members here. Admins manage everything including Settings; Managers assign leads and see team reports; Employees see only their own leads and calls. Disable a user to block their login without deleting their history. Your plan sets the maximum team size — the account owner counts as one user.')}</h1><p><a href="/settings">← Settings</a></p>
+  <div class="card"><div class="tblwrap"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr>
+  ${rows.map((x) => `<tr><td><b>${esc(x.name)}</b></td><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td>${x.active ? '✅ Active' : '⛔ Disabled'}</td><td>${fmtDT(x.last_login_at)}</td>
   <td><div class="rowflex">
-    ${x.id !== u.id ? `<form method="post" action="/settings/users/${x.id}/toggle"><button class="btn sm ghost" type="submit">${x.active ? 'Band Karein' : 'Chalu Karein'}</button></form>` : '<span class="mut small">aap khud</span>'}
-    <form method="post" action="/settings/users/${x.id}/reset" class="rowflex"><input type="password" name="password" placeholder="Naya password" required style="min-height:38px;max-width:150px"><button class="btn sm blue" type="submit">Reset</button></form>
+    ${x.id !== u.id ? `<form method="post" action="/settings/users/${x.id}/toggle"><button class="btn sm ghost" type="submit">${x.active ? 'Disable' : 'Enable'}</button></form>` : '<span class="mut small">you</span>'}
+    <form method="post" action="/settings/users/${x.id}/reset" class="rowflex"><input type="password" name="password" placeholder="New password" required style="min-height:38px;max-width:150px"><button class="btn sm blue" type="submit">Reset</button></form>
   </div></td></tr>`).join('')}</table></div></div>
-  <div class="card"><h3 style="margin-top:0">➕ Naya User</h3>
+  <div class="card"><h3 style="margin-top:0">➕ New User</h3>
   <form method="post" action="/settings/users"><div class="grid2">
-  <div><label>Naam</label><input name="name" required></div>
+  <div><label>Name</label><input name="name" required></div>
   <div><label>Email</label><input type="email" name="email" required></div>
   <div><label>Password</label><input name="password" required minlength="6"></div>
   <div><label>Role</label><select name="role"><option value="employee">Employee</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div></div>
-  <p><button class="btn" type="submit">User Jodein</button></p></form></div>`;
+  <p><button class="btn" type="submit">Add User</button></p></form></div>`;
   res.send(page(req, { title: 'Users', body, active: 'settings' }));
 });
 r.post('/settings/users', requireAuth, admin, (req, res) => {
   const d = getDb(); const u = req.user;
   const email = String(req.body.email || '').trim().toLowerCase();
-  if (d.prepare('SELECT id FROM users WHERE email=?').get(email)) { req.session.flash = { type: 'err', msg: 'Ye email pehle se hai.' }; return res.redirect('/settings/users'); }
+  if (d.prepare('SELECT id FROM users WHERE email=?').get(email)) { req.session.flash = { type: 'err', msg: 'This email is already in use.' }; return res.redirect('/settings/users'); }
   const subU = currentSub(d, u.workspace_id);
   if (subU && subU.max_employees !== null && userCount(d, u.workspace_id) >= subU.max_employees) {
-    req.session.flash = { type: 'err', msg: `Team limit poori ho gayi hai — aapke ${subU.plan_name} plan me zyada se zyada ${subU.max_employees} users ho sakte hain. Aur users ke liye plan upgrade karein (support se sampark karein).` };
+    req.session.flash = { type: 'err', msg: `Team limit reached — your ${subU.plan_name} plan allows up to ${subU.max_employees} users. For more users, upgrade your plan (please contact support).` };
     return res.redirect('/settings/users');
   }
   const role = ['admin', 'manager', 'employee'].includes(req.body.role) ? req.body.role : 'employee';
   d.prepare('INSERT INTO users (workspace_id, name, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)')
     .run(u.workspace_id, String(req.body.name || '').trim(), email, bcrypt.hashSync(String(req.body.password || '123456'), 10), role, nowISO());
-  req.session.flash = { type: 'ok', msg: 'User jud gaya ✅' };
+  req.session.flash = { type: 'ok', msg: 'User added ✅' };
   res.redirect('/settings/users');
 });
 r.post('/settings/users/:id/toggle', requireAuth, admin, (req, res) => {
@@ -185,7 +185,7 @@ r.post('/settings/users/:id/reset', requireAuth, admin, (req, res) => {
   const d = getDb();
   d.prepare('UPDATE users SET password_hash=? WHERE id=? AND workspace_id=?')
     .run(bcrypt.hashSync(String(req.body.password || '123456'), 10), req.params.id, req.user.workspace_id);
-  req.session.flash = { type: 'ok', msg: 'Password reset ho gaya ✅' };
+  req.session.flash = { type: 'ok', msg: 'Password reset ✅' };
   res.redirect('/settings/users');
 });
 
@@ -200,7 +200,7 @@ r.get('/settings/backup', requireAuth, admin, (req, res) => {
 
 r.post('/settings/restore', requireAuth, admin, (req, res) => {
   const buf = Buffer.from(String(req.body.data_base64 || ''), 'base64');
-  if (!buf.length) return res.json({ ok: false, error: 'File khaali hai' });
+  if (!buf.length) return res.json({ ok: false, error: 'The file is empty' });
   const tmp = path.join(path.dirname(DB_PATH), 'restore-tmp.db');
   fs.writeFileSync(tmp, buf);
   try {
@@ -210,7 +210,7 @@ r.post('/settings/restore', requireAuth, admin, (req, res) => {
     t.close();
   } catch (e) {
     try { fs.unlinkSync(tmp); } catch (err) {}
-    return res.json({ ok: false, error: 'Ye sahi All CRM backup file nahi lagti: ' + e.message });
+    return res.json({ ok: false, error: 'This does not look like a valid All CRM backup file: ' + e.message });
   }
   closeDb();
   fs.copyFileSync(tmp, DB_PATH);
@@ -221,7 +221,7 @@ r.post('/settings/restore', requireAuth, admin, (req, res) => {
   try { fs.unlinkSync(tmp); } catch (e) {}
   audit(getDb(), req.user.workspace_id, req.user.id, 'restore', 'Database restored from backup');
   req.session.destroy(() => {});
-  res.json({ ok: true, msg: 'Restore ho gaya ✅ Ab naye (backup wale) accounts se login karein.' });
+  res.json({ ok: true, msg: 'Restore complete ✅ Please log in with the accounts from the backup.' });
 });
 
 module.exports = r;

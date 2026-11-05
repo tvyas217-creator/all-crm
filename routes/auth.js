@@ -13,18 +13,18 @@ r.get('/login', (req, res) => {
   if (req.user) return res.redirect('/');
   const body = `<div class="loginwrap"><div class="card">
   <h1 style="text-align:center">📞 All CRM</h1>
-  <p class="mut center">Har lead, har call, har follow-up — ek hi jagah.</p>
+  <p class="mut center">Every lead, every call, every follow-up — in one place.</p>
   <form method="post" action="/login">
     <label>Email</label><input type="email" name="email" required autocomplete="username" placeholder="you@company.com">
     <label>Password</label><input type="password" name="password" required autocomplete="current-password" placeholder="••••••••">
-    <p style="margin-top:16px"><button class="btn block" type="submit">Login Karein</button></p>
+    <p style="margin-top:16px"><button class="btn block" type="submit">Log In</button></p>
   </form>
-  <details class="fold"><summary>Demo accounts (test ke liye)</summary>
+  <details class="fold"><summary>Demo Accounts (for testing)</summary>
   <p class="small">Admin: admin@allcrm.local / Admin@123<br>
   Manager: manager@allcrm.local / Manager@123<br>
   Employee: emp1@allcrm.local / Emp@123 · emp2@allcrm.local / Emp@123</p></details>
-  <p class="small mut">Password bhool gaye? Apne admin se reset karwayein (Settings → Users).</p>
-  <p class="small center" style="margin-top:10px">Nayi company banani hai? <a href="/register">Register karein →</a></p>
+  <p class="small mut">Forgot your password? Ask your admin to reset it (Settings → Users).</p>
+  <p class="small center" style="margin-top:10px">New company? <a href="/register">Register here →</a></p>
   </div></div>`;
   res.send(page(req, { title: 'Login', body }));
 });
@@ -34,11 +34,11 @@ r.post('/login', (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const u = d.prepare('SELECT * FROM users WHERE email=?').get(email);
   if (!u || !bcrypt.compareSync(String(req.body.password || ''), u.password_hash)) {
-    req.session.flash = { type: 'err', msg: 'Email ya password galat hai.' };
+    req.session.flash = { type: 'err', msg: 'Incorrect email or password.' };
     return res.redirect('/login');
   }
   if (!u.active) {
-    req.session.flash = { type: 'err', msg: 'Ye account band hai. Admin se sampark karein.' };
+    req.session.flash = { type: 'err', msg: 'This account has been deactivated. Please contact your admin.' };
     return res.redirect('/login');
   }
   const acc = workspaceAccess(d, u.workspace_id);
@@ -56,7 +56,7 @@ r.post('/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/login'));
 });
 
-// ---------- Public company registration ("Nayi Company") ----------
+// ---------- Public company registration ("New Company") ----------
 
 // Light abuse guard: max 10 register attempts per IP per 15 minutes (in-memory).
 const regHits = new Map(); // ip -> [timestamps]
@@ -73,19 +73,19 @@ function registerForm(vals, err) {
   vals = vals || {};
   const body = `<div class="loginwrap"><div class="card">
   <h1 style="text-align:center">📞 All CRM</h1>
-  <p class="mut center">Nayi company ke liye apna account banayein — saari leads aur team ka data bilkul alag rahega.</p>
+  <p class="mut center">Create an account for your new company — your leads and team data stay completely separate.</p>
   ${err ? `<div class="flash err">${esc(err)}</div>` : ''}
-  <p class="small center">Note: Nayi company ka account <b>approval ke baad</b> chalu hota hai — approve hote hi <b>3 din ka FREE trial</b> milta hai.</p>
+  <p class="small center">Note: A new company account becomes active <b>after approval</b> — once approved, you get a <b>3-day FREE trial</b>.</p>
   <form method="post" action="/register">
     <label>Company Name</label><input type="text" name="company" required value="${esc(vals.company || '')}" placeholder="e.g. Sharma Traders">
-    <label>Your Name</label><input type="text" name="name" required value="${esc(vals.name || '')}" placeholder="Aapka naam">
+    <label>Your Name</label><input type="text" name="name" required value="${esc(vals.name || '')}" placeholder="Your name">
     <label>Mobile Number (optional)</label><input type="tel" name="phone" value="${esc(vals.phone || '')}" placeholder="98XXXXXXXX">
     <label>Email</label><input type="email" name="email" required autocomplete="username" value="${esc(vals.email || '')}" placeholder="you@company.com">
-    <label>Password</label><input type="password" name="password" required autocomplete="new-password" placeholder="Kam se kam 6 characters">
-    <label>Confirm Password</label><input type="password" name="confirm" required autocomplete="new-password" placeholder="Password dobara likhein">
-    <p style="margin-top:16px"><button class="btn block" type="submit">Company Banayein →</button></p>
+    <label>Password</label><input type="password" name="password" required autocomplete="new-password" placeholder="At least 6 characters">
+    <label>Confirm Password</label><input type="password" name="confirm" required autocomplete="new-password" placeholder="Re-enter your password">
+    <p style="margin-top:16px"><button class="btn block" type="submit">Create Company →</button></p>
   </form>
-  <p class="small center" style="margin-top:10px">Pehle se account hai? <a href="/login">Login karein →</a></p>
+  <p class="small center" style="margin-top:10px">Already have an account? <a href="/login">Log in →</a></p>
   </div></div>`;
   return body;
 }
@@ -100,7 +100,7 @@ r.post('/register', (req, res) => {
   if (regRateLimited(req.ip || 'unknown')) {
     return res.status(429).send(page(req, {
       title: 'Register',
-      body: registerForm(req.body, 'Bahut zyada koshishein ho gayi hain — kripya 15 minute baad dobara try karein.'),
+      body: registerForm(req.body, 'Too many attempts — please try again after 15 minutes.'),
     }));
   }
   const company = String(req.body.company || '').trim();
@@ -113,14 +113,14 @@ r.post('/register', (req, res) => {
   const vals = { company, name, email, phone: req.body.phone || '' };
   const fail = (msg) => res.status(400).send(page(req, { title: 'Register', body: registerForm(vals, msg) }));
 
-  if (!company || !name || !email || !password || !confirm) return fail('Saare fields bharna zaroori hai.');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Email sahi format me likhein (e.g. you@company.com).');
-  if (password.length < 6) return fail('Password kam se kam 6 characters ka hona chahiye.');
-  if (password !== confirm) return fail('Password aur Confirm Password ek jaise nahi hain.');
+  if (!company || !name || !email || !password || !confirm) return fail('All fields are required.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('Please enter a valid email address (e.g. you@company.com).');
+  if (password.length < 6) return fail('Password must be at least 6 characters.');
+  if (password !== confirm) return fail('Password and Confirm Password do not match.');
 
   const d = getDb();
   if (d.prepare('SELECT id FROM users WHERE email=?').get(email)) {
-    return fail('Ye email pehle se registered hai — login karein');
+    return fail('This email is already registered — please log in.');
   }
 
   const now = nowISO();
@@ -136,7 +136,7 @@ r.post('/register', (req, res) => {
     create();
   } catch (e) {
     if (String(e.message || '').includes('UNIQUE constraint failed: users.email')) {
-      return fail('Ye email pehle se registered hai — login karein');
+      return fail('This email is already registered — please log in.');
     }
     throw e;
   }
@@ -145,10 +145,10 @@ r.post('/register', (req, res) => {
   // No login yet: the workspace stays "pending" until the Super Admin
   // approves it (approval starts the 3-day Trial).
   const body = `<div class="loginwrap"><div class="card">
-  <h1 style="text-align:center">✅ Request Mil Gayi!</h1>
-  <p>Namaste <b>${esc(name)}</b> ji, aapki company <b>"${esc(company)}"</b> ki request received ho gayi hai — ab ye <b>approval pending</b> hai.</p>
-  <p>Approve hote hi aap <b>${esc(email)}</b> se login kar payenge, aur aapko <b>3 din ka FREE trial</b> milega. Thoda intezaar karein — hum jald hi approve karenge.</p>
-  <p class="small center" style="margin-top:12px"><a href="/login">Login page par jayein →</a></p>
+  <h1 style="text-align:center">✅ Request Received!</h1>
+  <p>Hello <b>${esc(name)}</b>, your request for company <b>"${esc(company)}"</b> has been received and is now <b>pending approval</b>.</p>
+  <p>Once approved, you can log in with <b>${esc(email)}</b> and your <b>3-day FREE trial</b> will start. Please bear with us — we will approve it shortly.</p>
+  <p class="small center" style="margin-top:12px"><a href="/login">Go to the login page →</a></p>
   </div></div>`;
   res.send(page(req, { title: 'Request Received', body }));
 });

@@ -243,7 +243,7 @@ function migrateBilling(d) {
     if (need.length) {
       const ins = d.prepare('INSERT INTO subscriptions (workspace_id, plan_id, starts_at, expires_at, note, created_by, created_at) VALUES (?,?,?,?,?,?,?)');
       const tx = d.transaction(() => {
-        need.forEach((w) => ins.run(w.id, legacy.id, w.created_at, null, 'Grandfathered — billing se pehle ka workspace', 'migration', now));
+        need.forEach((w) => ins.run(w.id, legacy.id, w.created_at, null, 'Grandfathered — workspace predates billing', 'migration', now));
       });
       tx();
     }

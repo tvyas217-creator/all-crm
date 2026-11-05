@@ -2,7 +2,7 @@
 const express = require('express');
 const { getDb, touchLead, logEvent, audit } = require('../db');
 const { esc, nowISO, cleanMobile, validMobile, paginate, qs, fmtDT, fmtD, istDate, istDayRange } = require('../lib/util');
-const { page, statusChip } = require('../lib/layout');
+const { page, statusChip, info } = require('../lib/layout');
 const { requireAuth, requireRole, canAccessLead } = require('../lib/auth');
 const { currentSub, leadCount } = require('../lib/plans');
 
@@ -60,14 +60,14 @@ r.get('/leads', requireAuth, (req, res) => {
   const body = `<h1>👥 Leads <span class="mut" style="font-size:15px">(${total})</span></h1>
   <form method="get" class="card" style="padding:13px">
     <div class="rowflex">
-      <input style="flex:2;min-width:170px" type="search" name="q" value="${esc(f.q || '')}" placeholder="🔍 Naam ya number khojein">
-      <select name="status_id" style="flex:1;min-width:130px"><option value="">Saare Status</option>${statuses(d, u.workspace_id).map((s) => `<option value="${s.id}" ${String(f.status_id) === String(s.id) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
-      <select name="source" style="flex:1;min-width:120px"><option value="">Saare Source</option>${sources.map((s) => `<option ${f.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
-      ${u.role !== 'employee' ? `<select name="assigned" style="flex:1;min-width:130px"><option value="all">Sab Employees</option><option value="unassigned" ${f.assigned === 'unassigned' ? 'selected' : ''}>Unassigned</option>${employees(d, u.workspace_id).map((e) => `<option value="${e.id}" ${String(f.assigned) === String(e.id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>` : ''}
-      <select name="due" style="flex:1;min-width:120px"><option value="">Follow-up: Sab</option><option value="today" ${f.due === 'today' ? 'selected' : ''}>Aaj Due</option><option value="overdue" ${f.due === 'overdue' ? 'selected' : ''}>Overdue</option><option value="upcoming" ${f.due === 'upcoming' ? 'selected' : ''}>Upcoming</option></select>
-      <select name="tag_id" style="flex:1;min-width:110px"><option value="">Saare Tags</option>${tags.map((t) => `<option value="${t.id}" ${String(f.tag_id) === String(t.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+      <input style="flex:2;min-width:170px" type="search" name="q" value="${esc(f.q || '')}" placeholder="🔍 Search by name or number">
+      <select name="status_id" style="flex:1;min-width:130px"><option value="">All Statuses</option>${statuses(d, u.workspace_id).map((s) => `<option value="${s.id}" ${String(f.status_id) === String(s.id) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+      <select name="source" style="flex:1;min-width:120px"><option value="">All Sources</option>${sources.map((s) => `<option ${f.source === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+      ${u.role !== 'employee' ? `<select name="assigned" style="flex:1;min-width:130px"><option value="all">All Employees</option><option value="unassigned" ${f.assigned === 'unassigned' ? 'selected' : ''}>Unassigned</option>${employees(d, u.workspace_id).map((e) => `<option value="${e.id}" ${String(f.assigned) === String(e.id) ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>` : ''}
+      <select name="due" style="flex:1;min-width:120px"><option value="">Follow-up: All</option><option value="today" ${f.due === 'today' ? 'selected' : ''}>Due Today</option><option value="overdue" ${f.due === 'overdue' ? 'selected' : ''}>Overdue</option><option value="upcoming" ${f.due === 'upcoming' ? 'selected' : ''}>Upcoming</option></select>
+      <select name="tag_id" style="flex:1;min-width:110px"><option value="">All Tags</option>${tags.map((t) => `<option value="${t.id}" ${String(f.tag_id) === String(t.id) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
       <button class="btn sm" type="submit">Filter</button>
-      <a class="btn sm ghost" href="/leads/new">➕ Nayi Lead</a>
+      <a class="btn sm ghost" href="/leads/new">➕ New Lead</a>
       <a class="btn sm ghost" href="/leads/export${qs(f)}">⬇ Export CSV</a>
     </div>
   </form>
@@ -79,15 +79,15 @@ r.get('/leads', requireAuth, (req, res) => {
       <div class="sub">📱 ${esc(l.mobile)} · ${esc(l.city || '')} · ${esc(l.source || '')} · <span class="prio-${l.priority}">${l.priority}</span></div>
       <div class="sub">${statusChip({ name: l.status_name, color: l.status_color })} <span class="mut">${l.assignee_name ? '👤 ' + esc(l.assignee_name) : '⚠️ Unassigned'}</span> ${(rowTags[l.id] || []).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
     </div>
-    <form method="post" action="/calls/start"><input type="hidden" name="lead_id" value="${l.id}"><button class="callbtn" title="Call karein" type="submit">📞</button></form>
-  </div>`).join('') : '<p class="mut" style="padding:14px 4px">Koi lead nahi mili. Filter badlein ya nayi lead jodein.</p>'}
+    <form method="post" action="/calls/start"><input type="hidden" name="lead_id" value="${l.id}"><button class="callbtn" title="Call" type="submit">📞</button></form>
+  </div>`).join('') : '<p class="mut" style="padding:14px 4px">No leads found. Change the filter or add a new lead.</p>'}
   </div>
-  ${canAssign ? `<div class="card rowflex"><span><b>Bulk Assign:</b> upar leads tick karein →</span>
+  ${canAssign ? `<div class="card rowflex"><span><b>Bulk Assign:</b> tick leads above →</span>${info('Bulk Assign gives all ticked leads to one employee. Round-Robin spreads the unassigned leads evenly across all active employees, one by one — handy when a large new list arrives, so no single person is overloaded.')}
     <select name="user_id" form="bulkform" style="max-width:220px">${employees(d, u.workspace_id).map((e) => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
-    <button class="btn sm blue" form="bulkform" type="submit">Assign Karein</button></form>
+    <button class="btn sm blue" form="bulkform" type="submit">Assign</button></form>
     <form method="post" action="/leads/round-robin" class="rowflex" style="display:inline-flex">
-      <button class="btn sm ghost" type="submit">🔄 Round-Robin (saari unassigned)</button></form></div>` : ''}
-  <div class="pager">${pg.page > 1 ? `<a href="/leads${qs({ ...f, page: pg.page - 1 })}">← Pichla</a>` : ''}<span class="cur">${pg.page} / ${pg.pages}</span>${pg.page < pg.pages ? `<a href="/leads${qs({ ...f, page: pg.page + 1 })}">Agla →</a>` : ''}</div>`;
+      <button class="btn sm ghost" type="submit">🔄 Round-Robin (all unassigned)</button></form></div>` : ''}
+  <div class="pager">${pg.page > 1 ? `<a href="/leads${qs({ ...f, page: pg.page - 1 })}">← Previous</a>` : ''}<span class="cur">${pg.page} / ${pg.pages}</span>${pg.page < pg.pages ? `<a href="/leads${qs({ ...f, page: pg.page + 1 })}">Next →</a>` : ''}</div>`;
   res.send(page(req, { title: 'Leads', body, active: 'leads' }));
 });
 
@@ -97,12 +97,12 @@ r.post('/leads/bulk-assign', requireAuth, mgr, (req, res) => {
   if (!Array.isArray(ids)) ids = [ids];
   ids = ids.map(Number).filter(Boolean);
   const target = d.prepare("SELECT * FROM users WHERE id=? AND workspace_id=? AND role='employee' AND active=1").get(req.body.user_id, u.workspace_id);
-  if (!ids.length || !target) { req.session.flash = { type: 'err', msg: 'Pehle leads chunein aur employee chunein.' }; return res.redirect('/leads'); }
+  if (!ids.length || !target) { req.session.flash = { type: 'err', msg: 'Please select leads and an employee first.' }; return res.redirect('/leads'); }
   const upd = d.prepare('UPDATE leads SET assigned_to=?, updated_at=? WHERE id=? AND workspace_id=?');
   const ev = d.prepare('INSERT INTO timeline_events (lead_id, user_id, type, text, created_at) VALUES (?,?,?,?,?)');
-  ids.forEach((id) => { upd.run(target.id, nowISO(), id, u.workspace_id); ev.run(id, u.id, 'assignment', `Lead ${target.name} ko assign hui (bulk)`, nowISO()); });
+  ids.forEach((id) => { upd.run(target.id, nowISO(), id, u.workspace_id); ev.run(id, u.id, 'assignment', `Lead assigned to ${target.name} (bulk)`, nowISO()); });
   audit(d, u.workspace_id, u.id, 'bulk_assign', ids.length + ' leads -> ' + target.name);
-  req.session.flash = { type: 'ok', msg: ids.length + ' leads ' + target.name + ' ko assign ho gayi.' };
+  req.session.flash = { type: 'ok', msg: ids.length + ' leads assigned to ' + target.name + '.' };
   res.redirect('/leads');
 });
 
@@ -115,11 +115,11 @@ r.post('/leads/round-robin', requireAuth, mgr, (req, res) => {
     ids = d.prepare('SELECT id FROM leads WHERE workspace_id=? AND assigned_to IS NULL ORDER BY created_at').all(u.workspace_id).map((x) => x.id);
   }
   const emps = employees(d, u.workspace_id);
-  if (!ids.length || !emps.length) { req.session.flash = { type: 'err', msg: 'Round-robin ke liye unassigned leads aur employees chahiye.' }; return res.redirect('/leads'); }
+  if (!ids.length || !emps.length) { req.session.flash = { type: 'err', msg: 'Round-robin needs unassigned leads and active employees.' }; return res.redirect('/leads'); }
   const upd = d.prepare('UPDATE leads SET assigned_to=?, updated_at=? WHERE id=?');
   const ev = d.prepare('INSERT INTO timeline_events (lead_id, user_id, type, text, created_at) VALUES (?,?,?,?,?)');
-  ids.forEach((id, i) => { const e = emps[i % emps.length]; upd.run(e.id, nowISO(), id); ev.run(id, u.id, 'assignment', `Lead ${e.name} ko assign hui (round-robin)`, nowISO()); });
-  req.session.flash = { type: 'ok', msg: ids.length + ' leads round-robin se ' + emps.length + ' employees me baant di gayi.' };
+  ids.forEach((id, i) => { const e = emps[i % emps.length]; upd.run(e.id, nowISO(), id); ev.run(id, u.id, 'assignment', `Lead assigned to ${e.name} (round-robin)`, nowISO()); });
+  req.session.flash = { type: 'ok', msg: ids.length + ' leads distributed among ' + emps.length + ' employees via round-robin.' };
   res.redirect('/leads');
 });
 
@@ -130,10 +130,10 @@ function leadForm(req, lead, errs) {
   const vals = {};
   if (lead) d.prepare('SELECT * FROM lead_custom_values WHERE lead_id=?').all(lead.id).forEach((v) => { vals[v.field_id] = v.value; });
   const v = (k, fb = '') => esc(lead ? (lead[k] ?? fb) : fb);
-  return `<h1>${lead ? '✏️ Lead Edit' : '➕ Nayi Lead'}</h1>
+  return `<h1>${lead ? '✏️ Edit Lead' : '➕ New Lead'}</h1>
   ${errs ? `<div class="flash err">${esc(errs)}</div>` : ''}
   <form method="post" action="${lead ? '/leads/' + lead.id + '/update' : '/leads'}" class="card">
-    <div class="grid2"><div><label>Naam *</label><input name="name" required value="${v('name')}"></div>
+    <div class="grid2"><div><label>Name *</label><input name="name" required value="${v('name')}"></div>
     <div><label>Mobile Number *</label><input name="mobile" required inputmode="numeric" value="${v('mobile')}" placeholder="10-digit mobile"></div>
     <div><label>Alternate Number</label><input name="alt_mobile" inputmode="numeric" value="${v('alt_mobile')}"></div>
     <div><label>Email</label><input name="email" type="email" value="${v('email')}"></div>
@@ -146,11 +146,11 @@ function leadForm(req, lead, errs) {
       ? `<select name="cf_${fld.id}"><option value="">—</option>${(fld.options || '').split(',').map((o) => `<option ${vals[fld.id] === o.trim() ? 'selected' : ''}>${esc(o.trim())}</option>`).join('')}</select>`
       : `<input name="cf_${fld.id}" type="${fld.type === 'number' ? 'number' : fld.type === 'date' ? 'date' : 'text'}" value="${esc(vals[fld.id] || '')}">`}</div>`).join('')}
     </div>
-    <p style="margin-top:16px"><button class="btn" type="submit">${lead ? 'Save Karein' : 'Lead Jodein'}</button> <a class="btn ghost" href="/leads">Cancel</a></p>
+    <p style="margin-top:16px"><button class="btn" type="submit">${lead ? 'Save' : 'Add Lead'}</button> <a class="btn ghost" href="/leads">Cancel</a></p>
   </form>`;
 }
 
-r.get('/leads/new', requireAuth, (req, res) => res.send(page(req, { title: 'Nayi Lead', body: leadForm(req, null), active: 'leads' })));
+r.get('/leads/new', requireAuth, (req, res) => res.send(page(req, { title: 'New Lead', body: leadForm(req, null), active: 'leads' })));
 
 function saveCustom(d, leadId, body) {
   const fields = d.prepare('SELECT id FROM custom_fields WHERE workspace_id=(SELECT workspace_id FROM leads WHERE id=?)').all(leadId);
@@ -163,16 +163,16 @@ r.post('/leads', requireAuth, (req, res) => {
   const name = String(req.body.name || '').trim();
   const mobile = cleanMobile(req.body.mobile);
   if (!name || !validMobile(mobile)) {
-    return res.send(page(req, { title: 'Nayi Lead', body: leadForm(req, req.body, 'Naam aur sahi 10-digit mobile number zaroori hai.'), active: 'leads' }));
+    return res.send(page(req, { title: 'New Lead', body: leadForm(req, req.body, 'A name and a valid 10-digit mobile number are required.'), active: 'leads' }));
   }
   const dup = d.prepare('SELECT id, name FROM leads WHERE workspace_id=? AND mobile=?').get(u.workspace_id, mobile);
   if (dup) {
-    req.session.flash = { type: 'err', msg: `Ye number pehle se lead "${dup.name}" (#${dup.id}) me hai — duplicate nahi banega.` };
+    req.session.flash = { type: 'err', msg: `This number already exists on lead "${dup.name}" (#${dup.id}) — a duplicate will not be created.` };
     return res.redirect('/leads/' + dup.id);
   }
   const subL = currentSub(d, u.workspace_id);
   if (subL && subL.max_leads !== null && leadCount(d, u.workspace_id) >= subL.max_leads) {
-    req.session.flash = { type: 'err', msg: `Lead limit poori ho gayi hai — aapke ${subL.plan_name} plan me zyada se zyada ${subL.max_leads} leads ho sakti hain. Limit badhane ke liye plan upgrade karein (support se sampark karein).` };
+    req.session.flash = { type: 'err', msg: `Lead limit reached — your ${subL.plan_name} plan allows up to ${subL.max_leads} leads. To raise the limit, upgrade your plan (please contact support).` };
     return res.redirect('/leads');
   }
   const assigned = u.role === 'employee' ? u.id : (req.body.assigned_to ? Number(req.body.assigned_to) : null);
@@ -180,15 +180,15 @@ r.post('/leads', requireAuth, (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(u.workspace_id, name, mobile, cleanMobile(req.body.alt_mobile) || null, req.body.email || null, req.body.city || null,
     req.body.source || null, req.body.status_id ? Number(req.body.status_id) : null, assigned, req.body.priority || 'Warm', u.id, nowISO(), nowISO(), nowISO()).lastInsertRowid;
   saveCustom(d, id, req.body);
-  logEvent(d, id, u.id, 'created', `Lead bani — ${u.name} ne jodi`);
-  req.session.flash = { type: 'ok', msg: 'Lead jud gayi ✅' };
+  logEvent(d, id, u.id, 'created', `Lead created — added by ${u.name}`);
+  req.session.flash = { type: 'ok', msg: 'Lead added ✅' };
   res.redirect('/leads/' + id);
 });
 
 r.get('/leads/:id/edit', requireAuth, (req, res) => {
   const d = getDb(); const lead = getLead(d, req.params.id);
-  if (!canAccessLead(req.user, lead)) { req.session.flash = { type: 'err', msg: 'Lead nahi mili.' }; return res.redirect('/leads'); }
-  res.send(page(req, { title: 'Lead Edit', body: leadForm(req, lead), active: 'leads' }));
+  if (!canAccessLead(req.user, lead)) { req.session.flash = { type: 'err', msg: 'Lead not found.' }; return res.redirect('/leads'); }
+  res.send(page(req, { title: 'Edit Lead', body: leadForm(req, lead), active: 'leads' }));
 });
 
 r.post('/leads/:id/update', requireAuth, (req, res) => {
@@ -196,15 +196,15 @@ r.post('/leads/:id/update', requireAuth, (req, res) => {
   if (!canAccessLead(u, lead)) return res.redirect('/leads');
   const mobile = cleanMobile(req.body.mobile);
   if (!String(req.body.name || '').trim() || !validMobile(mobile)) {
-    return res.send(page(req, { title: 'Lead Edit', body: leadForm(req, { ...lead, ...req.body }, 'Naam aur sahi mobile zaroori hai.'), active: 'leads' }));
+    return res.send(page(req, { title: 'Edit Lead', body: leadForm(req, { ...lead, ...req.body }, 'A name and a valid mobile number are required.'), active: 'leads' }));
   }
   const dup = d.prepare('SELECT id FROM leads WHERE workspace_id=? AND mobile=? AND id<>?').get(u.workspace_id, mobile, lead.id);
-  if (dup) { req.session.flash = { type: 'err', msg: 'Ye number kisi aur lead me pehle se hai.' }; return res.redirect('/leads/' + lead.id + '/edit'); }
+  if (dup) { req.session.flash = { type: 'err', msg: 'This number already exists on another lead.' }; return res.redirect('/leads/' + lead.id + '/edit'); }
   d.prepare('UPDATE leads SET name=?, mobile=?, alt_mobile=?, email=?, city=?, source=?, status_id=?, priority=?, updated_at=? WHERE id=?')
     .run(String(req.body.name).trim(), mobile, cleanMobile(req.body.alt_mobile) || null, req.body.email || null, req.body.city || null, req.body.source || null,
       req.body.status_id ? Number(req.body.status_id) : lead.status_id, req.body.priority || lead.priority, nowISO(), lead.id);
   saveCustom(d, lead.id, req.body); touchLead(d, lead.id);
-  req.session.flash = { type: 'ok', msg: 'Lead update ho gayi ✅' };
+  req.session.flash = { type: 'ok', msg: 'Lead updated ✅' };
   res.redirect('/leads/' + lead.id);
 });
 
@@ -213,7 +213,7 @@ r.post('/leads/:id/delete', requireAuth, mgr, (req, res) => {
   if (lead && lead.workspace_id === req.user.workspace_id) {
     d.prepare('DELETE FROM leads WHERE id=?').run(lead.id);
     audit(d, req.user.workspace_id, req.user.id, 'lead_delete', lead.name + ' ' + lead.mobile);
-    req.session.flash = { type: 'ok', msg: 'Lead delete ho gayi.' };
+    req.session.flash = { type: 'ok', msg: 'Lead deleted.' };
   }
   res.redirect('/leads');
 });
@@ -239,7 +239,7 @@ r.get('/leads/export', requireAuth, (req, res) => {
 // ---------------- DETAIL + TIMELINE ----------------
 r.get('/leads/:id', requireAuth, (req, res) => {
   const d = getDb(); const u = req.user; const lead = getLead(d, req.params.id);
-  if (!canAccessLead(u, lead)) { req.session.flash = { type: 'err', msg: 'Lead nahi mili ya permission nahi hai.' }; return res.redirect('/leads'); }
+  if (!canAccessLead(u, lead)) { req.session.flash = { type: 'err', msg: 'Lead not found, or you do not have permission to view it.' }; return res.redirect('/leads'); }
   const st = lead.status_id ? d.prepare('SELECT * FROM statuses WHERE id=?').get(lead.status_id) : null;
   const fields = customFields(d, u.workspace_id);
   const vals = {}; d.prepare('SELECT * FROM lead_custom_values WHERE lead_id=?').all(lead.id).forEach((v) => { vals[v.field_id] = v.value; });
@@ -252,28 +252,28 @@ r.get('/leads/:id', requireAuth, (req, res) => {
   d.prepare('SELECT c.*, s.name AS status_name, s.color AS status_color, un.name AS user_name FROM calls c LEFT JOIN statuses s ON s.id=c.status_id LEFT JOIN users un ON un.id=c.user_id WHERE c.lead_id=?').all(lead.id)
     .forEach((c) => {
       if (c.state === 'completed') items.push({ ts: c.saved_at, html: `📞 <b>${esc(c.user_name || '')}</b> — ${c.direction === 'incoming' ? 'Incoming' : 'Outgoing'} call ${c.status_name ? `<span class="chip" style="background:${esc(c.status_color)}">${esc(c.status_name)}</span>` : ''}${c.duration_sec ? ` · ${c.duration_sec}s` : ''}${c.remark ? `<br>${esc(c.remark)}` : ''}${c.follow_up_at ? `<br><span class="mut">⏰ Follow-up: ${fmtDT(c.follow_up_at)}</span>` : ''}` });
-      else if (c.state === 'started') items.push({ ts: c.started_at, html: `📞 <b>${esc(c.user_name || '')}</b> ne call shuru ki — disposition baaki hai` });
+      else if (c.state === 'started') items.push({ ts: c.started_at, html: `📞 <b>${esc(c.user_name || '')}</b> started a call — disposition pending` });
     });
   d.prepare('SELECT f.*, un.name AS user_name FROM follow_ups f LEFT JOIN users un ON un.id=f.user_id WHERE f.lead_id=?').all(lead.id)
     .forEach((f) => items.push({ ts: f.created_at, html: `⏰ Follow-up set — <b>${fmtDT(f.due_at)}</b> (${esc(f.user_name || '')}) ${f.done ? '· ✅ Done ' + fmtDT(f.done_at) : ''}` }));
   d.prepare('SELECT w.*, un.name AS user_name FROM whatsapp_logs w LEFT JOIN users un ON un.id=w.user_id WHERE w.lead_id=?').all(lead.id)
-    .forEach((w) => items.push({ ts: w.created_at, html: `💬 WhatsApp bheja (${esc(w.user_name || '')})<br><span class="mut">${esc((w.message || '').slice(0, 120))}</span>` }));
+    .forEach((w) => items.push({ ts: w.created_at, html: `💬 WhatsApp sent (${esc(w.user_name || '')})<br><span class="mut">${esc((w.message || '').slice(0, 120))}</span>` }));
   d.prepare('SELECT e.*, un.name AS user_name FROM timeline_events e LEFT JOIN users un ON un.id=e.user_id WHERE e.lead_id=?').all(lead.id)
     .forEach((e) => items.push({ ts: e.created_at, html: `${e.type === 'note' ? '📝' : e.type === 'status' ? '🔄' : e.type === 'transfer' || e.type === 'assignment' ? '👤' : '✨'} ${esc(e.text)}${e.type === 'note' && e.user_name ? ` — <span class="mut">${esc(e.user_name)}</span>` : ''}` }));
   items.sort((a, b) => (a.ts < b.ts ? 1 : -1));
 
-  const body = `<p><a href="/leads">← Saari Leads</a></p>
+  const body = `<p><a href="/leads">← All Leads</a></p>
   <div class="card">
     <div class="rowflex" style="justify-content:space-between"><div>
       <h1 style="margin:0">${esc(lead.name)} <span class="prio-${lead.priority}" style="font-size:15px">${lead.priority}</span></h1>
       <p class="mut" style="margin:4px 0">📱 ${esc(lead.mobile)}${lead.alt_mobile ? ' · ' + esc(lead.alt_mobile) : ''} · ${esc(lead.city || '')} · Source: ${esc(lead.source || '—')}<br>
-      👤 Owner: <b>${esc(userName(d, lead.assigned_to))}</b> · Lead #${lead.id} · Bani: ${fmtD(lead.created_at)}</p>
+      👤 Owner: <b>${esc(userName(d, lead.assigned_to))}</b> · Lead #${lead.id} · Created: ${fmtD(lead.created_at)}</p>
     </div><div>${statusChip(st)}</div></div>
     <div class="rowflex" style="margin-top:10px">
-      <form method="post" action="/calls/start"><input type="hidden" name="lead_id" value="${lead.id}"><input type="hidden" name="return_to" value="/leads/${lead.id}"><button class="btn" type="submit">📞 Call Karein</button></form>
+      <form method="post" action="/calls/start"><input type="hidden" name="lead_id" value="${lead.id}"><input type="hidden" name="return_to" value="/leads/${lead.id}"><button class="btn" type="submit">📞 Call Now</button></form>
       ${templates.length ? `<span class="rowflex"><select id="wa_tpl" style="max-width:200px">${templates.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select><button class="btn" style="background:#25d366" type="button" onclick="sendWA()">💬 WhatsApp</button></span>` : ''}
       <a class="btn ghost" href="/leads/${lead.id}/edit">✏️ Edit</a>
-      ${u.role !== 'employee' ? `<form method="post" action="/leads/${lead.id}/delete" onsubmit="return confirm('Pakka delete karein?')"><button class="btn red sm" type="submit">Delete</button></form>` : ''}
+      ${u.role !== 'employee' ? `<form method="post" action="/leads/${lead.id}/delete" onsubmit="return confirm('Are you sure you want to delete this lead?')"><button class="btn red sm" type="submit">Delete</button></form>` : ''}
     </div>
     <script>function sendWA(){var t=document.getElementById('wa_tpl').value;fetch('/leads/${lead.id}/whatsapp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:t})}).then(function(r){return r.json()}).then(function(j){if(j.ok){window.open(j.url,'_blank');location.reload()}else alert(j.error||'Error')})}</script>
     <dl class="kv" style="margin-top:14px">
@@ -283,38 +283,38 @@ r.get('/leads/:id', requireAuth, (req, res) => {
     <div style="margin-top:8px">${leadTags.map((t) => `<span class="tag">${esc(t.name)} <a href="#" onclick="document.getElementById('untag_${t.id}').submit();return false" style="color:#991b1b">✕</a></span><form id="untag_${t.id}" method="post" action="/leads/${lead.id}/tags/remove" style="display:none"><input type="hidden" name="tag_id" value="${t.id}"></form>`).join('')}
     <form method="post" action="/leads/${lead.id}/tags/add" class="rowflex" style="margin-top:6px">
       <select name="tag_id" style="max-width:200px">${allTags.filter((t) => !leadTags.some((x) => x.id === t.id)).map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
-      <input name="new_tag" placeholder="ya naya tag likhein" style="max-width:180px">
+      <input name="new_tag" placeholder="or type a new tag" style="max-width:180px">
       <button class="btn sm ghost" type="submit">+ Tag</button></form></div>
   </div>
 
-  <div class="card"><h3 style="margin-top:0">🔄 Status Badlein</h3>
+  <div class="card"><h3 style="margin-top:0">🔄 Change Status</h3>
     <form method="post" action="/leads/${lead.id}/status" class="rowflex">
       <select name="status_id" style="max-width:240px">${statuses(d, u.workspace_id).map((s) => `<option value="${s.id}" ${lead.status_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
-      <button class="btn sm" type="submit">Status Save</button></form>
+      <button class="btn sm" type="submit">Save Status</button></form>
     ${u.role !== 'employee' ? `<h3>👤 Transfer / Assign</h3>
     <form method="post" action="/leads/${lead.id}/transfer" class="rowflex">
       <select name="user_id" style="max-width:240px"><option value="">— Unassigned —</option>${employees(d, u.workspace_id).map((e) => `<option value="${e.id}" ${lead.assigned_to === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
-      <button class="btn sm blue" type="submit">Assign Karein</button></form>` : ''}
+      <button class="btn sm blue" type="submit">Assign</button></form>` : ''}
   </div>
 
-  <details class="fold"><summary>➕ Manual Call Log karein (incoming/outgoing)</summary>
+  <details class="fold"><summary>➕ Add a Manual Call Log (incoming/outgoing)</summary>
     <form method="post" action="/calls/log">
       <input type="hidden" name="lead_id" value="${lead.id}">
       <div class="grid2">
-      <div><label>Direction</label><select name="direction"><option value="outgoing">Outgoing (maine call kiya)</option><option value="incoming">Incoming (lead ne call kiya)</option></select></div>
+      <div><label>Direction</label><select name="direction"><option value="outgoing">Outgoing (I called)</option><option value="incoming">Incoming (the lead called)</option></select></div>
       <div><label>Status</label><select name="status_id">${statuses(d, u.workspace_id).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>
       <div><label>Duration (sec, optional)</label><input type="number" name="duration_sec" min="0" placeholder="120"></div>
       <div><label>Follow-up Date (optional)</label><input type="date" name="follow_up_date"></div></div>
-      <label>Remark</label><textarea name="remark" placeholder="Call par kya baat hui..."></textarea>
-      <p><button class="btn sm" type="submit">Call Log Save</button></p>
+      <label>Remark</label><textarea name="remark" placeholder="What was discussed on the call..."></textarea>
+      <p><button class="btn sm" type="submit">Save Call Log</button></p>
     </form></details>
 
-  <div class="card"><h3 style="margin-top:0">📝 Note Jodein</h3>
-    <form method="post" action="/leads/${lead.id}/note"><textarea name="note" required placeholder="Is lead ke baare me note..."></textarea>
-    <p><button class="btn sm" type="submit">Note Save</button></p></form></div>
+  <div class="card"><h3 style="margin-top:0">📝 Add a Note</h3>
+    <form method="post" action="/leads/${lead.id}/note"><textarea name="note" required placeholder="A note about this lead..."></textarea>
+    <p><button class="btn sm" type="submit">Save Note</button></p></form></div>
 
-  <div class="card"><h3 style="margin-top:0">🕒 Poora Record (Timeline)</h3>
-    <div class="tl">${items.length ? items.map((i) => `<div class="ev"><div>${i.html}</div><div class="when">${fmtDT(i.ts)}</div></div>`).join('') : '<p class="mut">Abhi koi activity nahi hai.</p>'}</div>
+  <div class="card"><h3 style="margin-top:0">🕒 Full Record (Timeline)</h3>
+    <div class="tl">${items.length ? items.map((i) => `<div class="ev"><div>${i.html}</div><div class="when">${fmtDT(i.ts)}</div></div>`).join('') : '<p class="mut">No activity yet.</p>'}</div>
   </div>`;
   res.send(page(req, { title: lead.name, body, active: 'leads' }));
 });
@@ -339,7 +339,7 @@ r.post('/leads/:id/transfer', requireAuth, mgr, (req, res) => {
   const oldName = userName(d, lead.assigned_to);
   d.prepare('UPDATE leads SET assigned_to=?, updated_at=? WHERE id=?').run(targetId, nowISO(), lead.id);
   logEvent(d, lead.id, u.id, 'transfer', `Lead transfer: ${oldName} → ${userName(d, targetId)}`);
-  req.session.flash = { type: 'ok', msg: 'Lead assign/transfer ho gayi ✅' };
+  req.session.flash = { type: 'ok', msg: 'Lead assigned/transferred ✅' };
   res.redirect('/leads/' + lead.id);
 });
 
@@ -374,9 +374,9 @@ r.post('/leads/:id/tags/remove', requireAuth, (req, res) => {
 // WhatsApp: render template, log on timeline, return wa.me URL (JSON).
 r.post('/leads/:id/whatsapp', requireAuth, (req, res) => {
   const d = getDb(); const u = req.user; const lead = getLead(d, req.params.id);
-  if (!canAccessLead(u, lead)) return res.status(403).json({ ok: false, error: 'Permission nahi hai' });
+  if (!canAccessLead(u, lead)) return res.status(403).json({ ok: false, error: 'Permission denied' });
   const tpl = d.prepare('SELECT * FROM whatsapp_templates WHERE id=? AND workspace_id=?').get(req.body.template_id, u.workspace_id);
-  if (!tpl) return res.status(400).json({ ok: false, error: 'Template nahi mila' });
+  if (!tpl) return res.status(400).json({ ok: false, error: 'Template not found' });
   const msg = tpl.body.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => ({ name: lead.name, city: lead.city || '', source: lead.source || '', mobile: lead.mobile }[k] || m));
   d.prepare('INSERT INTO whatsapp_logs (lead_id, user_id, template_id, message, created_at) VALUES (?,?,?,?,?)').run(lead.id, u.id, tpl.id, msg, nowISO());
   touchLead(d, lead.id);

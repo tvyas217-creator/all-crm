@@ -28,7 +28,7 @@ echo "== 3. Duplicate mobile flagged =="
 curl -s -L -b /tmp/jar_e1.txt -d "name=Dup Lead&mobile=9812345678" $B/leads | grep -qi "duplicate"; chk $? "duplicate mobile rejected with message"
 
 echo "== 4. Call start creates a 'started' record =="
-curl -s -b /tmp/jar_e1.txt -d "lead_id=$LEAD_ID&return_to=/leads/$LEAD_ID" $B/calls/start | grep -q "Dialer Kholein"; chk $? "call-start page shows dialer link"
+curl -s -b /tmp/jar_e1.txt -d "lead_id=$LEAD_ID&return_to=/leads/$LEAD_ID" $B/calls/start | grep -q "Open Dialer"; chk $? "call-start page shows dialer link"
 CALL_ID=$(curl -s -b /tmp/jar_e1.txt $B/pending | grep -o 'calls/[0-9]*/disposition' | head -1 | cut -d/ -f2)
 [ -n "$CALL_ID" ]; chk $? "pending dispositions lists the started call (id=$CALL_ID)"
 STATE=$(node -e "const db=$DBQ;console.log(db.prepare('SELECT state FROM calls WHERE id=?').get($CALL_ID).state)")
@@ -52,7 +52,7 @@ echo "== 7. CSV import: 2 valid + 1 duplicate =="
 printf 'Name,Mobile,City,Email,Source\nImport One,9812000001,Delhi,one@test.in,JustDial\nImport Two,9812000002,Mumbai,,IndiaMART\nDup Again,9812345678,Jaipur,,Test\n' > /tmp/imp.csv
 B64=$(base64 -w0 /tmp/imp.csv)
 curl -s -b /tmp/jar_mgr.txt -H 'Content-Type: application/json' -d "{\"filename\":\"imp.csv\",\"data_base64\":\"$B64\",\"assign\":\"\"}" $B/import > /tmp/imp_out.html
-grep -q "2</b> leads jud gayi" /tmp/imp_out.html && grep -q "1</b> duplicate" /tmp/imp_out.html; chk $? "import report: added=2 duplicates=1"
+grep -q "2</b> leads added" /tmp/imp_out.html && grep -q "1</b> duplicate" /tmp/imp_out.html; chk $? "import report: added=2 duplicates=1"
 
 echo "== 8. Dialer session loads a lead =="
 curl -s -b /tmp/jar_e1.txt -o /dev/null -d "scope=mine" $B/dialer/start

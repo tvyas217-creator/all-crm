@@ -23,7 +23,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.mode === 'navigate') {
     e.respondWith(
       fetch(e.request).catch(() => new Response(
-        '<!DOCTYPE html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📞 All CRM</h2><p>Internet nahi chal raha. Connection aate hi page dobara kholein.</p></body></html>',
+        '<!DOCTYPE html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📞 All CRM</h2><p>You are offline. Please reopen this page when your connection is back.</p></body></html>',
         { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       ))
     );

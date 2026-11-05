@@ -2,7 +2,7 @@
 const express = require('express');
 const { getDb } = require('../db');
 const { esc, istDate, istDayRange, fmtDT, timeAgo } = require('../lib/util');
-const { page, statusChip } = require('../lib/layout');
+const { page, statusChip, info } = require('../lib/layout');
 const { requireAuth, requireRole } = require('../lib/auth');
 
 const r = express.Router();
@@ -22,11 +22,11 @@ r.get('/team', requireAuth, mgr, (req, res) => {
     return { e, calls, conn, open, fuDue, last };
   };
   const rows = emps.map(rowFor);
-  const body = `<h1>📡 Live Team Board</h1>
-  <p class="mut">Har 10 second me khud refresh hota hai. "Call par hai" ka matlab hai — employee ne call shuru ki hai, disposition abhi baaki hai (Phase 1 me browser asal call nahi dekh sakta).</p>
-  <div class="card"><div class="tblwrap"><table><tr><th>Employee</th><th>Haal</th><th>Aaj Calls</th><th>Connected</th><th>Follow-up Due</th><th>Last Activity</th></tr>
+  const body = `<h1>📡 Live Team Board${info('This board shows each employee\'s calls today, connected calls, pending follow-ups, and last activity, and refreshes automatically. "On a Call" means the employee has started a call and has not yet saved its disposition — in Phase 1 the browser cannot see the actual phone call, so an employee shows as on a call until the disposition is saved.')}</h1>
+  <p class="mut">This board refreshes automatically every 10 seconds. "On a Call" means the employee has started a call and the disposition is still pending (in Phase 1 the browser cannot see the actual phone call).</p>
+  <div class="card"><div class="tblwrap"><table><tr><th>Employee</th><th>Status</th><th>Today's Calls</th><th>Connected</th><th>Follow-up Due</th><th>Last Activity</th></tr>
   ${rows.map((x) => `<tr><td><b>${esc(x.e.name)}</b></td>
-    <td>${x.open ? '<span class="chip" style="background:#f59e0b">📞 Call par hai</span>' : '<span class="chip" style="background:#94a3b8">Idle</span>'}</td>
+    <td>${x.open ? '<span class="chip" style="background:#f59e0b">📞 On a Call</span>' : '<span class="chip" style="background:#94a3b8">Idle</span>'}</td>
     <td>${x.calls}</td><td>${x.conn}</td><td>${x.fuDue}</td><td>${timeAgo(x.last || x.e.last_active_at)}</td></tr>`).join('')}
   </table></div></div>
   <script>setTimeout(function(){location.reload()},30000)</script>`;
@@ -52,13 +52,13 @@ r.get('/reports', requireAuth, mgr, (req, res) => {
     WHERE l.workspace_id=? AND c.state='completed' AND c.saved_at>=? AND c.saved_at<? GROUP BY s.id ORDER BY c DESC`).all(u.workspace_id, f0, t1);
   const body = `<h1>📊 Reports</h1>
   <form method="get" class="card rowflex"><label style="margin:0">From</label><input type="date" name="from" value="${from}" style="max-width:180px">
-  <label style="margin:0">To</label><input type="date" name="to" value="${to}" style="max-width:180px"><button class="btn sm" type="submit">Report Dekhein</button></form>
+  <label style="margin:0">To</label><input type="date" name="to" value="${to}" style="max-width:180px"><button class="btn sm" type="submit">View Report</button></form>
   <div class="card"><h3 style="margin-top:0">Employee Performance (${esc(from)} → ${esc(to)})</h3>
   <div class="tblwrap"><table><tr><th>Employee</th><th>Calls</th><th>Connected</th><th>Connect %</th><th>Follow-ups Set</th><th>Talk Time (min)</th><th>Recording</th></tr>
-  ${per.map((x) => `<tr><td><b>${esc(x.e.name)}</b></td><td>${x.att}</td><td>${x.conn}</td><td>${x.rate}%</td><td>${x.fus}</td><td>${Math.round(x.dur / 60)}</td><td class="mut">Phase 2</td></tr>`).join('') || '<tr><td colspan="7" class="mut">Is period me koi call nahi hui.</td></tr>'}
+  ${per.map((x) => `<tr><td><b>${esc(x.e.name)}</b></td><td>${x.att}</td><td>${x.conn}</td><td>${x.rate}%</td><td>${x.fus}</td><td>${Math.round(x.dur / 60)}</td><td class="mut">Phase 2</td></tr>`).join('') || '<tr><td colspan="7" class="mut">No calls in this period.</td></tr>'}
   </table></div></div>
-  <div class="card"><h3 style="margin-top:0">Status ke Hisab se Calls</h3>
-  ${perStatus.length ? perStatus.map((s) => `<p style="margin:5px 0"><span class="chip" style="background:${esc(s.color || '#94a3b8')}">${esc(s.name || 'No Status')}</span> — <b>${s.c}</b> calls</p>`).join('') : '<p class="mut">Koi data nahi.</p>'}</div>`;
+  <div class="card"><h3 style="margin-top:0">Calls by Status</h3>
+  ${perStatus.length ? perStatus.map((s) => `<p style="margin:5px 0"><span class="chip" style="background:${esc(s.color || '#94a3b8')}">${esc(s.name || 'No Status')}</span> — <b>${s.c}</b> calls</p>`).join('') : '<p class="mut">No data.</p>'}</div>`;
   res.send(page(req, { title: 'Reports', body, active: 'reports' }));
 });
 
@@ -72,12 +72,12 @@ r.get('/lost', requireAuth, mgr, (req, res) => {
     FROM leads l LEFT JOIN statuses s ON s.id=l.status_id LEFT JOIN users au ON au.id=l.assigned_to
     WHERE l.workspace_id=? AND (s.name='Lost' OR (l.last_activity_at<? AND (s.name IS NULL OR s.name<>'Converted')))
     ORDER BY l.last_activity_at ASC LIMIT 200`).all(u.workspace_id, cutoff);
-  const body = `<h1>🧊 Lost / Thande Leads (${rows.length})</h1>
-  <p class="mut">Ye leads ya to "Lost" mark hain, ya pichle <b>${days} din</b> se in par koi activity nahi hui (Settings se din badal sakte hain). Inhe dobara try karna aksar kaam karta hai.</p>
+  const body = `<h1>🧊 Lost / Cold Leads (${rows.length})</h1>
+  <p class="mut">These leads are either marked "Lost", or have had no activity for the last <b>${days} days</b> (you can change the number of days in Settings). Trying them again often works.</p>
   <div class="card" style="padding:6px 14px">${rows.length ? rows.map((l) => `<div class="leadrow"><div class="info">
     <a class="nm" href="/leads/${l.id}">${esc(l.name)}</a>
     <div class="sub">📱 ${esc(l.mobile)} · ${esc(l.city || '')} · 👤 ${esc(l.assignee || 'Unassigned')} · last activity: ${fmtDT(l.last_activity_at)} (${timeAgo(l.last_activity_at)})</div></div>
-    ${statusChip({ name: l.status_name, color: l.status_color })}</div>`).join('') : '<p class="mut" style="padding:12px 4px">Koi lost/thandi lead nahi hai. 🎉</p>'}</div>`;
+    ${statusChip({ name: l.status_name, color: l.status_color })}</div>`).join('') : '<p class="mut" style="padding:12px 4px">No lost or cold leads. 🎉</p>'}</div>`;
   res.send(page(req, { title: 'Lost Leads', body, active: 'lost' }));
 });
 

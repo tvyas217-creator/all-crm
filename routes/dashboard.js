@@ -14,7 +14,7 @@ function feedRows(d, wsId, limit = 12) {
 }
 
 function feedHtml(rows) {
-  if (!rows.length) return '<p class="mut">Abhi koi call activity nahi hai.</p>';
+  if (!rows.length) return '<p class="mut">No call activity yet.</p>';
   return rows.map((c) => `<div class="leadrow"><div class="info"><div class="nm" style="font-size:15px">${esc(c.user_name)} → <a href="/leads/${c.lid}">${esc(c.lead_name)}</a></div>
     <div class="sub">${c.status_name ? `<span class="chip" style="background:${esc(c.status_color)}">${esc(c.status_name)}</span>` : ''} ${esc(c.remark || '')} · ${timeAgo(c.saved_at)}</div></div></div>`).join('');
 }
@@ -28,7 +28,7 @@ r.get('/', requireAuth, (req, res) => {
   const monday = addDaysIST(today, -dow);
   const [w0] = istDayRange(monday);
 
-  let body = `<h1>Namaste, ${esc(u.name.split(' ')[0])} ji 🙏</h1>`;
+  let body = `<h1>Welcome, ${esc(u.name.split(' ')[0])} 👋</h1>`;
 
   if (u.role === 'employee') {
     const myLeads = d.prepare('SELECT COUNT(*) c FROM leads WHERE assigned_to=?').get(u.id).c;
@@ -40,17 +40,17 @@ r.get('/', requireAuth, (req, res) => {
     const weekCalls = d.prepare("SELECT COUNT(*) c FROM calls WHERE user_id=? AND state='completed' AND saved_at>=?").get(u.id, w0).c;
     const weekConv = d.prepare(`SELECT COUNT(*) c FROM calls c JOIN leads l ON l.id=c.lead_id JOIN statuses s ON s.id=l.status_id WHERE c.user_id=? AND c.state='completed' AND c.saved_at>=? AND s.name='Converted'`).get(u.id, w0).c;
     body += `<div class="stats">
-      <div class="stat"><div class="n">${myLeads}</div><div class="l">Meri Leads</div></div>
-      <div class="stat green"><div class="n">${callsToday}</div><div class="l">Aaj ki Calls (${connToday} connected)</div></div>
-      <div class="stat amber"><div class="n">${fuDue}</div><div class="l">Follow-up Due (aaj tak)</div></div>
-      <div class="stat ${pending ? 'red' : ''}"><div class="n">${pending}</div><div class="l">Disposition Baaki</div></div>
+      <div class="stat"><div class="n">${myLeads}</div><div class="l">My Leads</div></div>
+      <div class="stat green"><div class="n">${callsToday}</div><div class="l">Today's Calls (${connToday} connected)</div></div>
+      <div class="stat amber"><div class="n">${fuDue}</div><div class="l">Follow-ups Due (till today)</div></div>
+      <div class="stat ${pending ? 'red' : ''}"><div class="n">${pending}</div><div class="l">Pending Dispositions</div></div>
     </div>
-    ${fuOver ? `<div class="flash err">⚠️ ${fuOver} follow-up overdue hain — pehle unhe niptayein. <a href="/followups?tab=overdue">Dekhein →</a></div>` : ''}
-    ${pending ? `<div class="flash err">📝 ${pending} call ka status/remark bharna baaki hai. <a href="/pending">Abhi bharein →</a></div>` : ''}
-    <div class="card"><h3 style="margin-top:0">Is hafte meri performance</h3>
+    ${fuOver ? `<div class="flash err">⚠️ ${fuOver} follow-up${fuOver === 1 ? ' is' : 's are'} overdue — please clear ${fuOver === 1 ? 'it' : 'them'} first. <a href="/followups?tab=overdue">View →</a></div>` : ''}
+    ${pending ? `<div class="flash err">📝 ${pending} call${pending === 1 ? '' : 's'} still need${pending === 1 ? 's' : ''} a status/remark. <a href="/pending">Fill now →</a></div>` : ''}
+    <div class="card"><h3 style="margin-top:0">My Performance This Week</h3>
     <p style="margin:6px 0">📞 Calls: <b>${weekCalls}</b> &nbsp;·&nbsp; 🎉 Converted calls: <b>${weekConv}</b></p>
-    <div class="rowflex"><a class="btn" href="/dialer">📞 Calling Shuru Karein</a><a class="btn ghost" href="/followups">⏰ Follow-ups (${fuDue})</a><a class="btn ghost" href="/leads?assigned=me">👥 Meri Leads</a></div></div>
-    <div class="card"><h3 style="margin-top:0">Meri recent activity</h3><div data-live-feed>${feedHtml(feedRows(d, u.workspace_id).filter((x) => x.user_id === u.id))}</div></div>`;
+    <div class="rowflex"><a class="btn" href="/dialer">📞 Start Calling</a><a class="btn ghost" href="/followups">⏰ Follow-ups (${fuDue})</a><a class="btn ghost" href="/leads?assigned=me">👥 My Leads</a></div></div>
+    <div class="card"><h3 style="margin-top:0">My Recent Activity</h3><div data-live-feed>${feedHtml(feedRows(d, u.workspace_id).filter((x) => x.user_id === u.id))}</div></div>`;
   } else {
     const totalLeads = d.prepare('SELECT COUNT(*) c FROM leads WHERE workspace_id=?').get(u.workspace_id).c;
     const unassigned = d.prepare('SELECT COUNT(*) c FROM leads WHERE workspace_id=? AND assigned_to IS NULL').get(u.workspace_id).c;
@@ -64,13 +64,13 @@ r.get('/', requireAuth, (req, res) => {
       FROM users u2 WHERE u2.workspace_id=? AND u2.role='employee' AND u2.active=1 ORDER BY calls_today DESC`).all(t0, t1, u.workspace_id);
     body += `<div class="stats">
       <div class="stat"><div class="n">${totalLeads}</div><div class="l">Total Leads (${unassigned} unassigned)</div></div>
-      <div class="stat green"><div class="n">${callsToday}</div><div class="l">Aaj ki Calls</div></div>
-      <div class="stat"><div class="n">${connToday}</div><div class="l">Connected Aaj</div></div>
+      <div class="stat green"><div class="n">${callsToday}</div><div class="l">Today's Calls</div></div>
+      <div class="stat"><div class="n">${connToday}</div><div class="l">Connected Today</div></div>
       <div class="stat ${fuOver ? 'red' : ''}"><div class="n">${fuOver}</div><div class="l">Overdue Follow-ups</div></div>
     </div>
     <div class="card"><h3 style="margin-top:0">Lead Status Funnel</h3>
     <p>${funnel.map((f) => `<span class="chip" style="background:${esc(f.color)};margin:2px">${esc(f.name)}: ${f.c}</span>`).join(' ')}</p>
-    <h3>Team — aaj ka score</h3><div class="tblwrap"><table><tr><th>Employee</th><th>Leads</th><th>Aaj Calls</th></tr>
+    <h3>Team — Today's Score</h3><div class="tblwrap"><table><tr><th>Employee</th><th>Leads</th><th>Today's Calls</th></tr>
     ${team.map((t) => `<tr><td><b>${esc(t.name)}</b></td><td>${t.leads_n}</td><td>${t.calls_today}</td></tr>`).join('')}</table></div>
     <p><a href="/team">📡 Live Team Board →</a> · <a href="/reports">📊 Reports →</a></p></div>
     <div class="card"><h3 style="margin-top:0">Live Activity (auto-refresh)</h3><div data-live-feed>${feedHtml(feedRows(d, u.workspace_id))}</div></div>`;

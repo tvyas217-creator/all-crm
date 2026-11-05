@@ -43,13 +43,13 @@ app.use('/', require('./routes/super'));
 
 app.use((req, res) => {
   if (!req.user) return res.redirect('/login');
-  res.status(404).send('<p style="font-family:sans-serif;padding:30px">Page nahi mila. <a href="/">Home →</a></p>');
+  res.status(404).send('<p style="font-family:sans-serif;padding:30px">Page not found. <a href="/">Home →</a></p>');
 });
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).send('<p style="font-family:sans-serif;padding:30px">Kuch gadbad ho gayi (server error). Thodi der baad phir try karein. <a href="/">Home →</a></p>');
+  res.status(500).send('<p style="font-family:sans-serif;padding:30px">Something went wrong (server error). Please try again in a little while. <a href="/">Home →</a></p>');
 });
 
 const PORT = process.env.PORT || 3000;

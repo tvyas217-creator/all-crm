@@ -1,7 +1,7 @@
 # All CRM — Phase 1
 
-**Har lead, har call, har follow-up — ek hi jagah.**
-A mobile-first telecalling + sales CRM that runs in the phone and PC browser. Employees call from their **own SIM** (the Call button opens the phone's normal dialer via `tel:`), and the CRM captures the outcome in a 2–3 tap after-call sheet. Managers see everything live on the web.
+**Every lead, every call, every follow-up — in one place.**
+A mobile-first telecalling + sales CRM that runs in the phone and PC browser. The UI is professional English throughout, with small ⓘ info buttons next to key features that explain them in plain words. Employees call from their **own SIM** (the Call button opens the phone's normal dialer via `tel:`), and the CRM captures the outcome in a 2–3 tap after-call sheet. Managers see everything live on the web.
 
 Built exactly to `~/workspace/all-crm/SPEC.md` Phase 1. Stack: **Node 24 + Express 4 + SQLite (better-sqlite3)** — server-rendered pages, no build step, no frontend framework.
 
