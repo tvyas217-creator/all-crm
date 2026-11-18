@@ -9,6 +9,7 @@ const { esc, nowISO, fmtDT, fmtD } = require('../lib/util');
 const { page, info } = require('../lib/layout');
 const { requireAuth, requireRole } = require('../lib/auth');
 const { currentSub, daysLeft, userCount, leadCount } = require('../lib/plans');
+const { getSetting, setSetting, getToken, maskToken } = require('../lib/rmdialer-sync');
 
 const r = express.Router();
 const admin = requireRole('admin');
@@ -41,6 +42,34 @@ r.get('/settings', requireAuth, admin, (req, res) => {
   <code style="word-break:break-all">POST /api/webhook/leads · Header: x-api-token: ${esc(ws.api_token || '')}</code><br>
   Body (JSON): {"name":"...","mobile":"98XXXXXXXX","city":"...","source":"Website"}</p>
   <form method="post" action="/settings/regen-token" onsubmit="return confirm('The old token will stop working. Continue?')"><button class="btn sm ghost" type="submit">🔄 Generate New Token</button></form></div>
+  ${(() => {
+    const token = getToken(d, u.workspace_id);
+    const lastAt = getSetting(d, u.workspace_id, 'rmdialer_last_sync_at');
+    const lastRes = getSetting(d, u.workspace_id, 'rmdialer_last_sync_result');
+    const lastErr = getSetting(d, u.workspace_id, 'rmdialer_last_error');
+    const leadsAt = getSetting(d, u.workspace_id, 'rmdialer_leads_last_sync_at');
+    const leadsRes = getSetting(d, u.workspace_id, 'rmdialer_leads_last_result');
+    const leadsErr = getSetting(d, u.workspace_id, 'rmdialer_leads_last_error');
+    return `<div class="card"><h3 style="margin-top:0">🔗 RMDialer Sync — Leads + Recordings ${info('If your team works in the RMDialer app, its leads and call recordings can flow into this CRM automatically. Paste your RMDialer API token here (in RMDialer: Setup → Outbound API). All CRM then pulls new leads and recordings every 15 minutes: leads are added only if their number is not already here (your edits are never overwritten), and each recording is matched to a lead by phone number so you can listen from the lead page or the Recordings page. The token is a secret — it is stored on the server only and never shown in full.')}</h3>
+  <p class="small">Leads and call recordings are pulled from RMDialer with one token. Get the token in RMDialer under <b>Setup → Outbound API</b> and paste it here.</p>
+  <p class="small">Current token: ${token ? `<b>${esc(maskToken(token))}</b> (saved)` : '<b>Not set</b>'}</p>
+  <form method="post" action="/settings/rmdialer-token">
+    <label>${token ? 'Replace Token' : 'RMDialer API Token'}</label>
+    <input type="password" name="rmdialer_token" placeholder="Paste the RMDialer Outbound API token" autocomplete="off">
+    <p style="margin-top:10px"><button class="btn sm" type="submit">💾 Save Token</button></p></form>
+  <p style="margin-top:14px"><b>👥 Leads</b></p>
+  ${leadsAt ? `<p class="small">Last lead sync: <b>${fmtDT(leadsAt)}</b>${leadsRes ? ' — ' + esc(leadsRes) : ''}</p>` : '<p class="small mut">No lead sync has run yet.</p>'}
+  ${leadsErr ? `<p class="small" style="color:#991b1b"><b>Last lead sync error:</b> ${esc(leadsErr)}</p>` : ''}
+  <p style="margin-top:14px"><b>🎙️ Recordings</b></p>
+  ${lastAt ? `<p class="small">Last recording sync: <b>${fmtDT(lastAt)}</b>${lastRes ? ' — ' + esc(lastRes) : ''}</p>` : '<p class="small mut">No recording sync has run yet.</p>'}
+  ${lastErr ? `<p class="small" style="color:#991b1b"><b>Last recording sync error:</b> ${esc(lastErr)}</p>` : ''}
+  <div class="rowflex">
+    <form method="post" action="/recordings/sync-leads" style="margin:0"><button class="btn sm blue" type="submit" ${token ? '' : 'disabled'}>🔄 Sync Leads</button></form>
+    <form method="post" action="/recordings/sync" style="margin:0"><button class="btn sm blue" type="submit" ${token ? '' : 'disabled'}>🔄 Sync Recordings</button></form>
+    ${token ? `<form method="post" action="/settings/rmdialer-token/remove" style="margin:0" onsubmit="return confirm('Remove the RMDialer token? Lead and recording sync will stop.')"><button class="btn sm ghost" type="submit">Remove Token</button></form>` : ''}
+    <a class="btn sm ghost" href="/recordings">🎙️ View Recordings</a>
+  </div></div>`;
+  })()}
   <div class="card"><h3 style="margin-top:0">🧭 Admin Sections</h3>
   <div class="rowflex">
     <a class="btn ghost" href="/settings/statuses">🔄 Lead Statuses</a>
@@ -69,6 +98,24 @@ r.post('/settings', requireAuth, admin, (req, res) => {
 r.post('/settings/regen-token', requireAuth, admin, (req, res) => {
   getDb().prepare('UPDATE workspaces SET api_token=? WHERE id=?').run(crypto.randomBytes(20).toString('hex'), req.user.workspace_id);
   req.session.flash = { type: 'ok', msg: 'New API token generated.' };
+  res.redirect('/settings');
+});
+
+// ---------- RMDialer Recording Sync token ----------
+r.post('/settings/rmdialer-token', requireAuth, admin, (req, res) => {
+  const d = getDb();
+  const token = String(req.body.rmdialer_token || '').trim();
+  if (!token) { req.session.flash = { type: 'err', msg: 'Please paste the RMDialer API token first.' }; return res.redirect('/settings'); }
+  setSetting(d, req.user.workspace_id, 'rmdialer_token', token);
+  audit(d, req.user.workspace_id, req.user.id, 'rmdialer_token', 'RMDialer API token saved (value not logged)');
+  req.session.flash = { type: 'ok', msg: 'RMDialer token saved ✅ Lead + recording sync is on — use the Sync buttons below or wait for the automatic sync.' };
+  res.redirect('/settings');
+});
+r.post('/settings/rmdialer-token/remove', requireAuth, admin, (req, res) => {
+  const d = getDb();
+  setSetting(d, req.user.workspace_id, 'rmdialer_token', '');
+  audit(d, req.user.workspace_id, req.user.id, 'rmdialer_token', 'RMDialer API token removed');
+  req.session.flash = { type: 'ok', msg: 'RMDialer token removed. Lead and recording sync is off.' };
   res.redirect('/settings');
 });
 

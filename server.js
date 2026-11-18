@@ -38,6 +38,7 @@ app.use('/', require('./routes/followups'));
 app.use('/', require('./routes/imports'));
 app.use('/', require('./routes/monitor'));
 app.use('/', require('./routes/whatsapp'));
+app.use('/', require('./routes/recordings'));
 app.use('/', require('./routes/settings'));
 app.use('/', require('./routes/super'));
 
@@ -53,4 +54,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('All CRM chal raha hai → http://localhost:' + PORT));
+app.listen(PORT, () => {
+  console.log('All CRM chal raha hai → http://localhost:' + PORT);
+  // RMDialer recording sync: every 15 minutes, for workspaces with a token.
+  try { require('./lib/rmdialer-sync').startScheduler(); } catch (e) { console.error('rmdialer sync scheduler failed to start', e); }
+});

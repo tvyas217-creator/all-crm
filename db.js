@@ -200,6 +200,32 @@ function initSchema(d) {
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS workspace_settings (
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id),
+    key TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (workspace_id, key)
+  );
+  CREATE TABLE IF NOT EXISTS call_recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id),
+    rmdialer_id INTEGER NOT NULL,
+    lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+    phone TEXT,
+    phone10 TEXT,
+    contact_name TEXT,
+    recording_url TEXT,
+    file_name TEXT,
+    duration_seconds INTEGER,
+    recorded_at TEXT,
+    recorded_by_name TEXT,
+    call_id TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (workspace_id, rmdialer_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_rec_ws_phone10 ON call_recordings(workspace_id, phone10);
+  CREATE INDEX IF NOT EXISTS idx_rec_ws_lead ON call_recordings(workspace_id, lead_id);
+  CREATE INDEX IF NOT EXISTS idx_rec_ws_recorded ON call_recordings(workspace_id, recorded_at);
   `);
 }
 

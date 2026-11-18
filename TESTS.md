@@ -282,3 +282,50 @@ Bug found by this suite and fixed before deploy: `assignPlan()`'s INSERT had
 
 Regression: fresh-DB run of the Phase-1 suite after these changes —
 **RESULT: 28 passed, 0 failed** (unchanged).
+
+---
+
+## 10. RMDialer Sync — leads + call recordings (Outbound API) — 2026-11-18
+
+Feature: per-workspace RMDialer Outbound API token (Settings → "RMDialer Sync —
+Leads + Recordings", shown masked, never rendered in full, never logged).
+Every 15 minutes (and on demand via the Sync Leads / Sync Recordings buttons)
+All CRM pulls from `https://secure.wappblaster.com/api/datalake/outbound`:
+
+- **Leads** (`GET /leads`, incremental via a separate `updated_since`
+  watermark): inserted only when the 10-digit mobile is new in the workspace
+  (existing leads are skipped, never overwritten), plan lead limit respected,
+  RMDialer status label matched to a workspace status by name (else the first
+  status), assignee matched by email → name → least-loaded active employee,
+  company name lands as a timeline note.
+- **Recordings** (`GET /recordings`): upserted into `call_recordings`
+  (UNIQUE(workspace_id, rmdialer_id)), matched to leads by last-10-digits of
+  the number, unmatched ones re-tried on every sync. Shown with an audio
+  player on the lead page ("Call Recordings" card) and on the new
+  `/recordings` page (admins/managers see all; employees only recordings of
+  their own leads; unmatched are admin/manager-only).
+
+Code: `db.js` (`call_recordings` + `workspace_settings` tables —
+CREATE TABLE IF NOT EXISTS, boot-safe on existing DBs), `lib/rmdialer-sync.js`
+(sync engine + scheduler), `routes/recordings.js` (list page + sync triggers),
+`routes/settings.js` (token + status card), `routes/leads.js` (lead-page
+card), `lib/layout.js` (nav item), `server.js` (route + scheduler start).
+
+Tests run (all against scratch DATA_DIRs; the repo `data/` was backed up and
+restored byte-for-byte around the e2e run):
+
+- **Boot/page sweep** on a fresh DB and on two pre-change DBs (old-code seed
+  DB and a copy of the repo DB): new tables + indexes appear, existing counts
+  unchanged (30 / 34 leads), every page 200.
+- **Mock sync (stubbed fetch)** — recordings: 23 checks (full pull, upsert,
+  dedupe on re-run, `updated_since` on later runs, lead matching + late-lead
+  rematch, 401/403 clean errors, watermark not advanced on failure); paging +
+  429-retry: 6 checks; leads: 25 checks (dup/invalid/limit counts, email
+  assignee match, status-label match, least-loaded fallback, company note,
+  recordings matched after leads arrived, separate leads watermark).
+- **Settings UI (HTTP, stub API returning 401):** token saves, page shows
+  only the masked form, Sync Now stores the clean 401 message, server alive.
+- **Permissions (HTTP):** 20 checks — admin/manager see all recordings,
+  employees only their own leads', search + date filters work.
+- **Regression:** `tools/e2e-test.sh` **28 passed, 0 failed**;
+  `tools/super-test.sh` **49 passed, 0 failed**.

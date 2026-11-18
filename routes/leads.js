@@ -14,6 +14,11 @@ function statuses(d, wsId) { return d.prepare('SELECT * FROM statuses WHERE work
 function employees(d, wsId) { return d.prepare("SELECT * FROM users WHERE workspace_id=? AND role='employee' AND active=1 ORDER BY name").all(wsId); }
 function userName(d, id) { if (!id) return '—'; const u = d.prepare('SELECT name FROM users WHERE id=?').get(id); return u ? u.name : '—'; }
 function customFields(d, wsId) { return d.prepare('SELECT * FROM custom_fields WHERE workspace_id=? ORDER BY sort, id').all(wsId); }
+function fmtDur(sec) {
+  if (sec == null) return '—';
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
 
 function buildFilter(req, u) {
   const q = (req.query.q || '').trim();
@@ -262,6 +267,15 @@ r.get('/leads/:id', requireAuth, (req, res) => {
     .forEach((e) => items.push({ ts: e.created_at, html: `${e.type === 'note' ? '📝' : e.type === 'status' ? '🔄' : e.type === 'transfer' || e.type === 'assignment' ? '👤' : '✨'} ${esc(e.text)}${e.type === 'note' && e.user_name ? ` — <span class="mut">${esc(e.user_name)}</span>` : ''}` }));
   items.sort((a, b) => (a.ts < b.ts ? 1 : -1));
 
+  const recordings = d.prepare('SELECT * FROM call_recordings WHERE lead_id=? ORDER BY recorded_at DESC, id DESC').all(lead.id);
+  const recordingsCard = `<div class="card"><h3 style="margin-top:0">🎙️ Call Recordings ${info('These recordings come from the RMDialer app and are matched to this lead automatically by phone number. Press play to listen here. If a recording is missing, check Settings → RMDialer Recording Sync.')}</h3>
+    ${recordings.length ? recordings.map((rec) => `<div class="leadrow">
+      <div class="info"><div><b>${fmtDT(rec.recorded_at)}</b> · ⏱ ${fmtDur(rec.duration_seconds)}${rec.recorded_by_name ? ' · 👤 ' + esc(rec.recorded_by_name) : ''}</div>
+      <div class="sub">${esc(rec.file_name || '')}</div></div>
+      ${rec.recording_url ? `<audio controls preload="none" src="${esc(rec.recording_url)}" style="max-width:230px;height:38px;flex:none"></audio>` : ''}
+    </div>`).join('') : '<p class="mut" style="margin:0">No recordings yet. Recordings from RMDialer appear here automatically once sync is on.</p>'}
+  </div>`;
+
   const body = `<p><a href="/leads">← All Leads</a></p>
   <div class="card">
     <div class="rowflex" style="justify-content:space-between"><div>
@@ -312,6 +326,8 @@ r.get('/leads/:id', requireAuth, (req, res) => {
   <div class="card"><h3 style="margin-top:0">📝 Add a Note</h3>
     <form method="post" action="/leads/${lead.id}/note"><textarea name="note" required placeholder="A note about this lead..."></textarea>
     <p><button class="btn sm" type="submit">Save Note</button></p></form></div>
+
+  ${recordingsCard}
 
   <div class="card"><h3 style="margin-top:0">🕒 Full Record (Timeline)</h3>
     <div class="tl">${items.length ? items.map((i) => `<div class="ev"><div>${i.html}</div><div class="when">${fmtDT(i.ts)}</div></div>`).join('') : '<p class="mut">No activity yet.</p>'}</div>
