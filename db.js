@@ -406,6 +406,49 @@ function seed(d) {
     .run(wsId, adminId, 'seed', 'Demo workspace seed data created', now);
 }
 
+// ---------- One-time cleanups (marker-guarded, run once on boot) ----------
+function oneTimeCleanups(d) {
+  try {
+    d.exec(`CREATE TABLE IF NOT EXISTS one_time_cleanups (
+      name TEXT PRIMARY KEY, done_at TEXT NOT NULL, detail TEXT
+    )`);
+    // Tarun, 19 Nov 2026: undo the 18 Nov bulk push of RMDialer leads that went
+    // in through the lead webhook (900 leads + 1 test lead). He confirmed the
+    // exact set ("saari leads jo udhar se aayi vo hata do"). The pushed leads
+    // are identified by the push window (2026-11-18 11:25-11:45 UTC) and the
+    // source values they carried. Aborts untouched if the matched count is
+    // outside the expected band, so a wrong guess can never delete data.
+    const NAME = 'rmdialer_webhook_push_20261118';
+    if (d.prepare('SELECT name FROM one_time_cleanups WHERE name=?').get(NAME)) return;
+    const rows = d.prepare(`SELECT id FROM leads
+      WHERE created_at>=? AND created_at<=? AND source IN ('Excel import','RMDialer','Google Sheet')`)
+      .all('2026-11-18T11:25:00.000Z', '2026-11-18T11:45:00.000Z');
+    let detail;
+    if (rows.length >= 850 && rows.length <= 960) {
+      const ids = rows.map((r) => r.id);
+      let deleted = 0;
+      const delChildren = (id) => {
+        for (const t of ['calls', 'follow_ups', 'whatsapp_logs', 'timeline_events']) {
+          d.prepare(`DELETE FROM ${t} WHERE lead_id=?`).run(id);
+        }
+      };
+      const delLead = d.prepare('DELETE FROM leads WHERE id=?');
+      const tx = d.transaction((list) => {
+        for (const id of list) { delChildren(id); deleted += delLead.run(id).changes; }
+      });
+      tx(ids);
+      detail = `deleted ${deleted} of ${rows.length} matched leads`;
+    } else {
+      detail = `ABORTED: matched ${rows.length} leads, outside expected band 850-960; nothing deleted`;
+    }
+    d.prepare('INSERT INTO one_time_cleanups (name, done_at, detail) VALUES (?,?,?)')
+      .run(NAME, new Date().toISOString(), detail);
+    console.log('[one-time-cleanup]', NAME, '->', detail);
+  } catch (e) {
+    console.error('[one-time-cleanup] failed:', e.message);
+  }
+}
+
 function openDb() {
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
@@ -413,6 +456,7 @@ function openDb() {
   initSchema(db);
   seed(db);
   migrateBilling(db);
+  oneTimeCleanups(db);
   return db;
 }
 function getDb() { if (!db) openDb(); return db; }
